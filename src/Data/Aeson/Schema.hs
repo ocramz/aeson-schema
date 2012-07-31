@@ -1,0 +1,1 @@
+module Data.Aeson.Schema where
