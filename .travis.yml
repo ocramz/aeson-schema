@@ -1,0 +1,5 @@
+language: haskell
+before_script:
+  - "cabal install QuickCheck test-framework"
+after_script:
+  - "cat dist/test/aeson-schema-*-tests.log"
