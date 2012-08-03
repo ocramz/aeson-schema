@@ -44,6 +44,7 @@ data Schema = Schema
   , schemaMinLength :: Int
   , schemaMaxLength :: Maybe Int
   , schemaEnum :: Maybe [Value]
+  , schemaEnumDescriptions :: Maybe [String]
   , schemaDefault :: Maybe Value
   , schemaTitle :: Maybe String
   , schemaDescription :: Maybe String
@@ -77,6 +78,7 @@ instance FromJSON Schema where
     sMinLength <- parseFieldDefault "minLength" $ Number (fromInteger 0)
     sMaxLength <- parseField "maxLength"
     sEnum <- parseField "enum"
+    sEnumDescriptions <- parseField "enumDescriptions"
     sDefault <- parseField "default"
     sTitle <- parseField "title"
     sDescription <- parseField "description"
@@ -107,6 +109,7 @@ instance FromJSON Schema where
       , schemaMinLength = sMinLength
       , schemaMaxLength = sMaxLength
       , schemaEnum = sEnum
+      , schemaEnumDescriptions = sEnumDescriptions
       , schemaDefault = sDefault
       , schemaTitle = sTitle
       , schemaDescription = sDescription
