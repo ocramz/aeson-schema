@@ -1,4 +1,4 @@
-{-# LANGUAGE OverloadedStrings, TemplateHaskell #-}
+{-# LANGUAGE OverloadedStrings, TemplateHaskell, FlexibleInstances #-}
 
 module Data.Aeson.Schema
   where
@@ -24,15 +24,15 @@ $(fmap concat (mapM generateChoice [1..10]))
 
 type Map a = H.HashMap Text a
 
-data Schema = Schema
-  { schemaType :: [Choice2 String Schema]
-  , schemaProperties :: Map Schema
-  , schemaPatternProperties :: Map Schema
-  , schemaAdditionalProperties :: Choice3 String Bool Schema
-  , schemaItems :: Choice3 String Schema [Schema]
-  , schemaAdditionalItems :: Choice3 String Bool Schema
+data Schema ref = Schema
+  { schemaType :: [Choice2 String (Schema ref)]
+  , schemaProperties :: Map (Schema ref)
+  , schemaPatternProperties :: Map (Schema ref)
+  , schemaAdditionalProperties :: Choice3 String Bool (Schema ref)
+  , schemaItems :: Choice3 String (Schema ref) [Schema ref]
+  , schemaAdditionalItems :: Choice3 String Bool (Schema ref)
   , schemaRequired :: Bool
-  , schemaDependencies :: Map (Choice2 [String] Schema)
+  , schemaDependencies :: Map (Choice2 [String] (Schema ref))
   , schemaMinimum :: Maybe Number
   , schemaMaximum :: Maybe Number
   , schemaExclusiveMinimum :: Bool
@@ -50,14 +50,14 @@ data Schema = Schema
   , schemaDescription :: Maybe String
   , schemaFormat :: Maybe String
   , schemaDivisibleBy :: Maybe Number
-  , schemaDisallow :: [Choice2 String Schema]
-  , schemaExtends :: [Schema]
+  , schemaDisallow :: [Choice2 String (Schema ref)]
+  , schemaExtends :: [Schema ref]
   , schemaId :: Maybe String
-  , schemaDRef :: Maybe String -- ^ $ref
+  , schemaDRef :: Maybe ref -- ^ $ref
   , schemaDSchema :: Maybe String -- ^ $schema
   } deriving (Eq, Show)
 
-instance FromJSON Schema where
+instance FromJSON (Schema String) where
   parseJSON (Object o) = do
     sType <- parseSingleOrArray =<< parseFieldDefault "type" "any"
     sProperties <- parseFieldDefault "properties" emptyObject

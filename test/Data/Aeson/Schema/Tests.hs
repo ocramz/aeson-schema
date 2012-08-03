@@ -17,7 +17,7 @@ tests =
       schemaBS <- L.readFile "examples/schema.json"
       case decode schemaBS :: Maybe Value of
         Nothing -> HU.assertFailure "JSON syntax error"
-        Just val -> case fromJSON val :: Result Schema of
+        Just val -> case fromJSON val :: Result (Schema String) of
           Error e -> HU.assertFailure e
           Success schema -> do
             Just "http://json-schema.org/schema#" HU.@=? schemaId schema
