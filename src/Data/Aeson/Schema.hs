@@ -1,13 +1,15 @@
 {-# LANGUAGE OverloadedStrings, FlexibleInstances #-}
 
 module Data.Aeson.Schema
-  where
-  --( Schema (..)
-  --) where
+  ( Schema (..)
+  , Fix (..)
+  , followReferences
+  ) where
 
 import Data.Maybe (fromMaybe, maybe)
 import Data.Traversable (traverse)
 import Data.List (concat)
+import Data.Function (fix)
 import Data.Functor ((<$>))
 import Control.Monad ((=<<), mapM)
 import Data.Aeson (Value (..), (.:?), (.!=), FromJSON (..))
@@ -15,6 +17,7 @@ import Data.Aeson.Types (Parser (..), emptyObject, emptyArray)
 import qualified Data.Aeson as A
 import qualified Data.Vector as V
 import qualified Data.HashMap.Strict as H
+import qualified Data.Map as M
 import Data.Text (Text (..), unpack)
 import Data.Attoparsec.Number (Number (..))
 
@@ -68,6 +71,8 @@ instance Functor Schema where
     , schemaExtends = fmap f <$> schemaExtends s
     , schemaDRef = f <$> schemaDRef s
     }
+
+newtype Fix a = Fix (a (Fix a))
 
 instance FromJSON (Schema String) where
   parseJSON (Object o) = do
@@ -148,7 +153,10 @@ instance FromJSON (Schema String) where
 
 singleOrArray :: (Value -> Parser a) -> Value -> Parser [a]
 singleOrArray p (Array a) = mapM p (V.toList a)
-singleOrArray p v = fmap (:[]) $ p v
+singleOrArray p v = (:[]) <$> p v
 
 parseSingleOrArray :: (FromJSON a) => Value -> Parser [a]
 parseSingleOrArray = singleOrArray parseJSON
+
+followReferences :: (Ord k, Functor f) => M.Map k (f k) -> M.Map k (f (Fix f))
+followReferences input = fix $ \output -> fmap (Fix . (M.!) output) <$> input
