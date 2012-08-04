@@ -11,12 +11,9 @@ import qualified Test.HUnit as HU
 import Data.Text ()
 import Data.Vector (fromList)
 import Data.Aeson
-import Data.Aeson.Schema.Choice (generateChoice)
+import Data.Aeson.Schema.Choice
 import Language.Haskell.TH
 import Data.Char (toUpper)
-
-$(generateChoice 3)
-$(generateChoice 7)
 
 choiceShow3 :: Choice3 String Int Bool -> String
 choiceShow3 (Choice1of3 s) = s
