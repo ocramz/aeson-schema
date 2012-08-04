@@ -32,7 +32,13 @@ generateChoice n = do
                                                       []
                                               ]
                             ]
-  return [dataDec, instToJSON, instFromJSON]
+  choiceFun <- funD (mkName $ "choice" ++ show n)
+                  $ let f = mkName "f"
+                        v = mkName "v"
+                    in zipWith (\i con -> clause (replicate i wildP ++ [varP f] ++ replicate (n-i-1) wildP ++ [conP con [varP v]])
+                                                 (normalB $ conE con `appE` (varE f `appE` varE v))
+                                                 []) [0..] conNames
+  return [dataDec, instToJSON, instFromJSON, choiceFun]
   where
     singleton :: a -> [a]
     singleton = (:[])

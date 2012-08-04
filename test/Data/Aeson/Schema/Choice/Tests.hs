@@ -13,6 +13,7 @@ import Data.Vector (fromList)
 import Data.Aeson
 import Data.Aeson.Schema.Choice (generateChoice)
 import Language.Haskell.TH
+import Data.Char (toUpper)
 
 $(generateChoice 3)
 $(generateChoice 7)
@@ -41,4 +42,8 @@ tests =
       object [ "Left" .= String "a" ] HU.@=? toJSON (Choice1of3 (Left 'a') :: Choice3 (Either Char Bool) () (Maybe String))
       Array (fromList []) HU.@=? toJSON (Choice2of3 () :: Choice3 (Either Char Bool) () (Maybe String))
       Null HU.@=? toJSON (Choice3of3 Nothing :: Choice3 (Either Char Bool) () (Maybe String))
+  , testCase "mapChoice3" $ do
+      Choice1of3 "LOREM" HU.@=? choice3 (map toUpper) (+1) not (Choice1of3 "lorem")
+      Choice2of3 4 HU.@=? choice3 (map toUpper) (+1) not (Choice2of3 3)
+      Choice3of3 True HU.@=? choice3 (map toUpper) (+1) not (Choice3of3 False)
   ]
