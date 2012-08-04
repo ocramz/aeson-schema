@@ -1,4 +1,4 @@
-{-# LANGUAGE OverloadedStrings, TemplateHaskell, FlexibleInstances #-}
+{-# LANGUAGE OverloadedStrings, FlexibleInstances #-}
 
 module Data.Aeson.Schema
   where
@@ -17,10 +17,7 @@ import qualified Data.HashMap.Strict as H
 import Data.Text (Text (..), unpack)
 import Data.Attoparsec.Number (Number (..))
 
-import Data.Aeson.Schema.Choice (generateChoice)
-import Language.Haskell.TH
-
-$(fmap concat (mapM generateChoice [1..10]))
+import Data.Aeson.Schema.Choice
 
 type Map a = H.HashMap Text a
 
