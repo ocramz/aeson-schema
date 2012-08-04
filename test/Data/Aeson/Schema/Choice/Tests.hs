@@ -26,6 +26,9 @@ choiceShow3 (Choice3of3 b) = if b then "yes" else "no"
 choiceEqual3 :: (Eq a, Eq b, Eq c) => Choice3 a b c -> Choice3 a b c -> Bool
 choiceEqual3 = (==)
 
+choiceOrd3 :: (Ord a, Ord b, Ord c) => Choice3 a b c -> Choice3 a b c -> Ordering
+choiceOrd3 = compare
+
 choiceShow7 :: (Show a, Show b, Show c, Show d) => Choice7 String Int Bool a b c d -> String
 choiceShow7 (Choice1of7 s) = s
 choiceShow7 (Choice2of7 i) = show i
@@ -42,7 +45,7 @@ tests =
       object [ "Left" .= String "a" ] HU.@=? toJSON (Choice1of3 (Left 'a') :: Choice3 (Either Char Bool) () (Maybe String))
       Array (fromList []) HU.@=? toJSON (Choice2of3 () :: Choice3 (Either Char Bool) () (Maybe String))
       Null HU.@=? toJSON (Choice3of3 Nothing :: Choice3 (Either Char Bool) () (Maybe String))
-  , testCase "mapChoice3" $ do
+  , testCase "choice3" $ do
       Choice1of3 "LOREM" HU.@=? choice3 (map toUpper) (+1) not (Choice1of3 "lorem")
       Choice2of3 4 HU.@=? choice3 (map toUpper) (+1) not (Choice2of3 3)
       Choice3of3 True HU.@=? choice3 (map toUpper) (+1) not (Choice3of3 False)
