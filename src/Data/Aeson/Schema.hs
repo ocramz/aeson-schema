@@ -8,6 +8,7 @@ module Data.Aeson.Schema
 import Data.Maybe (fromMaybe, maybe)
 import Data.Traversable (traverse)
 import Data.List (concat)
+import Data.Functor ((<$>))
 import Control.Monad ((=<<), mapM)
 import Data.Aeson (Value (..), (.:?), (.!=), FromJSON (..))
 import Data.Aeson.Types (Parser (..), emptyObject, emptyArray)
@@ -53,6 +54,20 @@ data Schema ref = Schema
   , schemaDRef :: Maybe ref -- ^ $ref
   , schemaDSchema :: Maybe String -- ^ $schema
   } deriving (Eq, Show)
+
+instance Functor Schema where
+  fmap f s = s
+    { schemaType = choice2 id (fmap f) <$> schemaType s
+    , schemaProperties = fmap f <$> schemaProperties s
+    , schemaPatternProperties = fmap f <$> schemaPatternProperties s
+    , schemaAdditionalProperties = choice3 id id (fmap f) (schemaAdditionalProperties s)
+    , schemaItems = choice3 id (fmap f) (fmap $ fmap f) (schemaItems s)
+    , schemaAdditionalItems = choice3 id id (fmap f) (schemaAdditionalItems s)
+    , schemaDependencies = choice2 id (fmap f) <$> schemaDependencies s
+    , schemaDisallow = choice2 id (fmap f) <$> schemaDisallow s
+    , schemaExtends = fmap f <$> schemaExtends s
+    , schemaDRef = f <$> schemaDRef s
+    }
 
 instance FromJSON (Schema String) where
   parseJSON (Object o) = do
