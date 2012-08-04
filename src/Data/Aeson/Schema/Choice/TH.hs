@@ -4,7 +4,7 @@ module Data.Aeson.Schema.Choice.TH
   ( generateChoice
   ) where
 
-import Control.Monad (mapM)
+import Control.Monad (mapM, forM)
 import Language.Haskell.TH
 import Data.Aeson (ToJSON (..), FromJSON (..))
 import Control.Applicative (Alternative (..))
@@ -38,7 +38,12 @@ generateChoice n = do
                     in zipWith (\i con -> clause (replicate i wildP ++ [varP f] ++ replicate (n-i-1) wildP ++ [conP con [varP v]])
                                                  (normalB $ conE con `appE` (varE f `appE` varE v))
                                                  []) [0..] conNames
-  return [dataDec, instToJSON, instFromJSON, choiceFun]
+  choiceIofNFuns <- forM (zip [1..n] conNames) $ \(i, con) -> do
+    funD (mkName $ "choice" ++ show i ++ "of" ++ show n ++ "s")
+       $ let cs = mkName "cs"
+             c  = mkName "c"
+         in [clause [varP cs] (normalB $ compE [bindS (conP con [varP c]) (varE cs), noBindS (varE c)]) []]
+  return $ [dataDec, instToJSON, instFromJSON, choiceFun] ++ choiceIofNFuns
   where
     singleton :: a -> [a]
     singleton = (:[])

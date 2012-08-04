@@ -46,4 +46,6 @@ tests =
       Choice1of3 "LOREM" HU.@=? choice3 (map toUpper) (+1) not (Choice1of3 "lorem")
       Choice2of3 4 HU.@=? choice3 (map toUpper) (+1) not (Choice2of3 3)
       Choice3of3 True HU.@=? choice3 (map toUpper) (+1) not (Choice3of3 False)
+  , testCase "choice2of3s" $ do
+      ["eins", "zwei", "drei"] HU.@=? choice2of3s [Choice1of3 True, Choice2of3 "eins", Choice2of3 "zwei", Choice3of3 '?', Choice2of3 "drei"]
   ]
