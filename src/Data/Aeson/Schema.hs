@@ -14,6 +14,7 @@ import Data.Traversable (traverse)
 import Data.List (concat)
 import Data.Function (fix)
 import Data.Functor ((<$>))
+import Control.Applicative ((<*>))
 import Control.Monad ((=<<), mapM)
 import Data.Aeson (Value (..), (.:?), (.!=), FromJSON (..))
 import Data.Aeson.Types (Parser (..), emptyObject, emptyArray)
@@ -134,69 +135,37 @@ empty = Schema
 newtype Fix a = Fix (a (Fix a))
 
 instance FromJSON (Schema String) where
-  parseJSON (Object o) = do
-    sType <- parseSingleOrArray =<< parseFieldDefault "type" "any"
-    sProperties <- parseFieldDefault "properties" emptyObject
-    sPatternProperties <- parseFieldDefault "patternProperties" emptyObject
-    sAdditionalProperties <- parseField "additionalProperties" .!= Choice2of3 True
-    sItems <- parseField "items"
-    sAdditionalItems <- parseField "additionalItems" .!= Choice2of3 True
-    sRequired <- parseFieldDefault "required" (Bool False)
-    sDependencies <- traverse parseDependency =<< parseFieldDefault "dependencies" emptyObject
-    sMinimum <- parseField "minimum"
-    sMaximum <- parseField "maximum"
-    sExclusiveMinimum <- parseFieldDefault "exclusiveMinimum" (Bool False)
-    sExclusiveMaximum <- parseFieldDefault "exclusiveMaximum" (Bool False)
-    sMinItems <- parseFieldDefault "minItems" $ Number (fromInteger 0)
-    sMaxItems <- parseField "maxItems"
-    sUniqueItems <- parseFieldDefault "uniqueItems" (Bool False)
-    sPattern <- parseField "pattern"
-    sMinLength <- parseFieldDefault "minLength" $ Number (fromInteger 0)
-    sMaxLength <- parseField "maxLength"
-    sEnum <- parseField "enum"
-    sEnumDescriptions <- parseField "enumDescriptions"
-    sDefault <- parseField "default"
-    sTitle <- parseField "title"
-    sDescription <- parseField "description"
-    sFormat <- parseField "format"
-    sDivisibleBy <- parseField "divisibleBy"
-    sDisallow <- parseSingleOrArray =<< parseFieldDefault "disallow" emptyArray
-    sExtends <- (maybe (return Nothing) (fmap Just . parseSingleOrArray) =<< parseField "extends") .!= []
-    sId <- parseField "id"
-    sDRef <- parseField "$ref"
-    sDSchema <- parseField "$schema"
-    return $ Schema
-      { schemaType = sType
-      , schemaProperties = sProperties
-      , schemaPatternProperties = sPatternProperties
-      , schemaAdditionalProperties = sAdditionalProperties
-      , schemaItems = sItems
-      , schemaAdditionalItems = sAdditionalItems
-      , schemaRequired = sRequired
-      , schemaDependencies = sDependencies
-      , schemaMinimum = sMinimum
-      , schemaMaximum = sMaximum
-      , schemaExclusiveMinimum = sExclusiveMinimum
-      , schemaExclusiveMaximum = sExclusiveMaximum
-      , schemaMinItems = sMinItems
-      , schemaMaxItems = sMaxItems
-      , schemaUniqueItems = sUniqueItems
-      , schemaPattern = sPattern
-      , schemaMinLength = sMinLength
-      , schemaMaxLength = sMaxLength
-      , schemaEnum = sEnum
-      , schemaEnumDescriptions = sEnumDescriptions
-      , schemaDefault = sDefault
-      , schemaTitle = sTitle
-      , schemaDescription = sDescription
-      , schemaFormat = sFormat
-      , schemaDivisibleBy = sDivisibleBy
-      , schemaDisallow = sDisallow
-      , schemaExtends = sExtends
-      , schemaId = sId
-      , schemaDRef = sDRef
-      , schemaDSchema = sDSchema
-      }
+  parseJSON (Object o) =
+    Schema <$> (parseSingleOrArray =<< parseFieldDefault "type" "any")
+           <*> parseFieldDefault "properties" emptyObject
+           <*> parseFieldDefault "patternProperties" emptyObject
+           <*> (parseField "additionalProperties" .!= Choice2of3 True)
+           <*> parseField "items"
+           <*> (parseField "additionalItems" .!= Choice2of3 True)
+           <*> parseFieldDefault "required" (Bool False)
+           <*> (traverse parseDependency =<< parseFieldDefault "dependencies" emptyObject)
+           <*> parseField "minimum"
+           <*> parseField "maximum"
+           <*> parseFieldDefault "exclusiveMinimum" (Bool False)
+           <*> parseFieldDefault "exclusiveMaximum" (Bool False)
+           <*> parseFieldDefault "minItems" (Number $ fromInteger 0)
+           <*> parseField "maxItems"
+           <*> parseFieldDefault "uniqueItems" (Bool False)
+           <*> parseField "pattern"
+           <*> parseFieldDefault "minLength" (Number $ fromInteger 0)
+           <*> parseField "maxLength"
+           <*> parseField "enum"
+           <*> parseField "enumDescriptions"
+           <*> parseField "default"
+           <*> parseField "title"
+           <*> parseField "description"
+           <*> parseField "format"
+           <*> parseField "divisibleBy"
+           <*> (parseSingleOrArray =<< parseFieldDefault "disallow" emptyArray)
+           <*> ((maybe (return Nothing) (fmap Just . parseSingleOrArray) =<< parseField "extends") .!= [])
+           <*> parseField "id"
+           <*> parseField "$ref"
+           <*> parseField "$schema"
       where
         parseField :: (FromJSON a) => Text -> Parser (Maybe a)
         parseField name = o .:? name
