@@ -37,6 +37,7 @@ test-suite tests
                        text,
                        vector,
                        containers,
+                       unordered-containers,
                        aeson-schema,
                        template-haskell,
                        test-framework >= 0.6 && < 0.7,

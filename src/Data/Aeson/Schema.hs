@@ -7,7 +7,9 @@ module Data.Aeson.Schema
   , followReferences
   ) where
 
+import Prelude hiding (foldr)
 import Data.Maybe (fromMaybe, maybe)
+import Data.Foldable (Foldable (..), toList)
 import Data.Traversable (traverse)
 import Data.List (concat)
 import Data.Function (fix)
@@ -72,6 +74,28 @@ instance Functor Schema where
     , schemaExtends = fmap f <$> schemaExtends s
     , schemaDRef = f <$> schemaDRef s
     }
+
+instance Foldable Schema where
+  foldr f start s = ffoldr (ffoldr f) (choice2of2s $ schemaType s)
+                  . ffoldr (ffoldr f) (schemaProperties s)
+                  . ffoldr (ffoldr f) (schemaPatternProperties s)
+                  . foldChoice3of3 (ffoldr f) (schemaAdditionalProperties s)
+                  . ffoldr (\items -> foldChoice2of3 (ffoldr f) items . foldChoice3of3 (ffoldr $ ffoldr f) items) (schemaItems s)
+                  . foldChoice3of3 (ffoldr f) (schemaAdditionalItems s)
+                  . ffoldr (ffoldr f) (choice2of2s $ toList $ schemaDependencies s)
+                  . ffoldr (ffoldr f) (choice2of2s $ schemaDisallow s)
+                  . ffoldr (ffoldr f) (schemaExtends s)
+                  . ffoldr f (schemaDRef s)
+                  $ start
+    where
+      ffoldr :: (Foldable t) => (a -> b -> b) -> t a -> b -> b
+      ffoldr g = flip $ foldr g
+      foldChoice2of3 :: (a -> b -> b) -> Choice3 x a y -> b -> b
+      foldChoice2of3 g (Choice2of3 c) = g c
+      foldChoice2of3 _ _ = id
+      foldChoice3of3 :: (a -> b -> b) -> Choice3 x y a -> b -> b
+      foldChoice3of3 g (Choice3of3 c) = g c
+      foldChoice3of3 _ _ = id
 
 empty :: Schema ref
 empty = Schema
