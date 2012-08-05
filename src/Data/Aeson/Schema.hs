@@ -72,6 +72,40 @@ instance Functor Schema where
     , schemaDRef = f <$> schemaDRef s
     }
 
+empty :: Schema ref
+empty = Schema
+  { schemaType = []
+  , schemaProperties = H.empty
+  , schemaPatternProperties = H.empty
+  , schemaAdditionalProperties = Choice3of3 empty
+  , schemaItems = Choice2of3 empty
+  , schemaAdditionalItems = Choice3of3 empty
+  , schemaRequired = False
+  , schemaDependencies = H.empty
+  , schemaMinimum = Nothing
+  , schemaMaximum = Nothing
+  , schemaExclusiveMinimum = False
+  , schemaExclusiveMaximum = False
+  , schemaMinItems = 0
+  , schemaMaxItems = Nothing
+  , schemaUniqueItems = False
+  , schemaPattern = Nothing
+  , schemaMinLength = 0
+  , schemaMaxLength = Nothing
+  , schemaEnum = Nothing
+  , schemaEnumDescriptions = Nothing
+  , schemaDefault = Nothing
+  , schemaTitle = Nothing
+  , schemaDescription = Nothing
+  , schemaFormat = Nothing
+  , schemaDivisibleBy = Nothing
+  , schemaDisallow = []
+  , schemaExtends = []
+  , schemaId = Nothing
+  , schemaDRef = Nothing
+  , schemaDSchema = Nothing
+  }
+
 newtype Fix a = Fix (a (Fix a))
 
 instance FromJSON (Schema String) where
