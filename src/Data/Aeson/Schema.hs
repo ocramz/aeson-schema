@@ -2,6 +2,7 @@
 
 module Data.Aeson.Schema
   ( Schema (..)
+  , empty
   , Fix (..)
   , followReferences
   ) where
@@ -30,7 +31,7 @@ data Schema ref = Schema
   , schemaProperties :: Map (Schema ref)
   , schemaPatternProperties :: Map (Schema ref)
   , schemaAdditionalProperties :: Choice3 String Bool (Schema ref)
-  , schemaItems :: Choice3 String (Schema ref) [Schema ref]
+  , schemaItems :: Maybe (Choice3 String (Schema ref) [Schema ref])
   , schemaAdditionalItems :: Choice3 String Bool (Schema ref)
   , schemaRequired :: Bool
   , schemaDependencies :: Map (Choice2 [String] (Schema ref))
@@ -64,7 +65,7 @@ instance Functor Schema where
     , schemaProperties = fmap f <$> schemaProperties s
     , schemaPatternProperties = fmap f <$> schemaPatternProperties s
     , schemaAdditionalProperties = choice3 id id (fmap f) (schemaAdditionalProperties s)
-    , schemaItems = choice3 id (fmap f) (fmap $ fmap f) (schemaItems s)
+    , schemaItems = choice3 id (fmap f) (fmap $ fmap f) <$> schemaItems s
     , schemaAdditionalItems = choice3 id id (fmap f) (schemaAdditionalItems s)
     , schemaDependencies = choice2 id (fmap f) <$> schemaDependencies s
     , schemaDisallow = choice2 id (fmap f) <$> schemaDisallow s
@@ -77,9 +78,9 @@ empty = Schema
   { schemaType = []
   , schemaProperties = H.empty
   , schemaPatternProperties = H.empty
-  , schemaAdditionalProperties = Choice3of3 empty
-  , schemaItems = Choice2of3 empty
-  , schemaAdditionalItems = Choice3of3 empty
+  , schemaAdditionalProperties = Choice2of3 True
+  , schemaItems = Nothing
+  , schemaAdditionalItems = Choice2of3 True
   , schemaRequired = False
   , schemaDependencies = H.empty
   , schemaMinimum = Nothing
@@ -113,9 +114,9 @@ instance FromJSON (Schema String) where
     sType <- parseSingleOrArray =<< parseFieldDefault "type" "any"
     sProperties <- parseFieldDefault "properties" emptyObject
     sPatternProperties <- parseFieldDefault "patternProperties" emptyObject
-    sAdditionalProperties <- parseField "additionalProperties" .!= Choice3of3 emptySchema
-    sItems <- parseField "items" .!= Choice2of3 emptySchema
-    sAdditionalItems <- parseField "additionalItems" .!= Choice3of3 emptySchema
+    sAdditionalProperties <- parseField "additionalProperties" .!= Choice2of3 True
+    sItems <- parseField "items"
+    sAdditionalItems <- parseField "additionalItems" .!= Choice2of3 True
     sRequired <- parseFieldDefault "required" (Bool False)
     sDependencies <- traverse parseDependency =<< parseFieldDefault "dependencies" emptyObject
     sMinimum <- parseField "minimum"
@@ -136,7 +137,7 @@ instance FromJSON (Schema String) where
     sFormat <- parseField "format"
     sDivisibleBy <- parseField "divisibleBy"
     sDisallow <- parseSingleOrArray =<< parseFieldDefault "disallow" emptyArray
-    sExtends <- (maybe (return Nothing) (fmap Just . parseSingleOrArray) =<< parseField "extends") .!= [emptySchema]
+    sExtends <- (maybe (return Nothing) (fmap Just . parseSingleOrArray) =<< parseField "extends") .!= []
     sId <- parseField "id"
     sDRef <- parseField "$ref"
     sDSchema <- parseField "$schema"
@@ -180,9 +181,6 @@ instance FromJSON (Schema String) where
 
         parseDependency (String s) = return $ Choice1of2 [unpack s]
         parseDependency o = parseJSON o
-        emptySchema = case A.fromJSON emptyObject of
-          A.Error e -> error e
-          A.Success schema -> schema
   parseJSON _ = fail "a schema must be a JSON object"
 
 singleOrArray :: (Value -> Parser a) -> Value -> Parser [a]
