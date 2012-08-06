@@ -33,14 +33,14 @@ import Data.Aeson.Schema.Choice
 type Map a = H.HashMap Text a
 
 data Schema ref = Schema
-  { schemaType :: [Choice2 String (Schema ref)]
+  { schemaType :: [Choice2 Text (Schema ref)]
   , schemaProperties :: Map (Schema ref)
   , schemaPatternProperties :: Map (Schema ref)
-  , schemaAdditionalProperties :: Choice3 String Bool (Schema ref)
-  , schemaItems :: Maybe (Choice3 String (Schema ref) [Schema ref])
-  , schemaAdditionalItems :: Choice3 String Bool (Schema ref)
+  , schemaAdditionalProperties :: Choice3 Text Bool (Schema ref)
+  , schemaItems :: Maybe (Choice3 Text (Schema ref) [Schema ref])
+  , schemaAdditionalItems :: Choice3 Text Bool (Schema ref)
   , schemaRequired :: Bool
-  , schemaDependencies :: Map (Choice2 [String] (Schema ref))
+  , schemaDependencies :: Map (Choice2 [Text] (Schema ref))
   , schemaMinimum :: Maybe Number
   , schemaMaximum :: Maybe Number
   , schemaExclusiveMinimum :: Bool
@@ -48,21 +48,21 @@ data Schema ref = Schema
   , schemaMinItems :: Int
   , schemaMaxItems :: Maybe Int
   , schemaUniqueItems :: Bool
-  , schemaPattern :: Maybe String
+  , schemaPattern :: Maybe Text
   , schemaMinLength :: Int
   , schemaMaxLength :: Maybe Int
   , schemaEnum :: Maybe [Value]
-  , schemaEnumDescriptions :: Maybe [String]
+  , schemaEnumDescriptions :: Maybe [Text]
   , schemaDefault :: Maybe Value
-  , schemaTitle :: Maybe String
-  , schemaDescription :: Maybe String
-  , schemaFormat :: Maybe String
+  , schemaTitle :: Maybe Text
+  , schemaDescription :: Maybe Text
+  , schemaFormat :: Maybe Text
   , schemaDivisibleBy :: Maybe Number
-  , schemaDisallow :: [Choice2 String (Schema ref)]
+  , schemaDisallow :: [Choice2 Text (Schema ref)]
   , schemaExtends :: [Schema ref]
-  , schemaId :: Maybe String
+  , schemaId :: Maybe Text
   , schemaDRef :: Maybe ref -- ^ $ref
-  , schemaDSchema :: Maybe String -- ^ $schema
+  , schemaDSchema :: Maybe Text -- ^ $schema
   } deriving (Eq, Show)
 
 instance Functor Schema where
@@ -137,7 +137,7 @@ empty = Schema
 
 newtype Fix a = Fix (a (Fix a))
 
-instance FromJSON (Schema String) where
+instance (FromJSON ref) => FromJSON (Schema ref) where
   parseJSON (Object o) =
     Schema <$> (parseSingleOrArray =<< parseFieldDefault "type" "any")
            <*> parseFieldDefault "properties" emptyObject
@@ -175,7 +175,7 @@ instance FromJSON (Schema String) where
         parseFieldDefault :: (FromJSON a) => Text -> Value -> Parser a
         parseFieldDefault name value = parseJSON =<< parseField name .!= value
 
-        parseDependency (String s) = return $ Choice1of2 [unpack s]
+        parseDependency (String s) = return $ Choice1of2 [s]
         parseDependency o = parseJSON o
   parseJSON _ = fail "a schema must be a JSON object"
 
@@ -198,7 +198,7 @@ validateP :: Schema String -> Value -> Parser ()
 validateP schema val = do
   msum $ map validateType (schemaType schema)
   where
-    validateType :: Choice2 String (Schema String) -> Parser ()
+    validateType :: Choice2 Text (Schema String) -> Parser ()
     validateType (Choice1of2 t) = case t of
       "string" -> case val of
         String s -> do
@@ -228,7 +228,7 @@ validateP schema val = do
       "array" -> fail "not implemented"
       "null" -> fail "not implemented"
       "any" -> fail "not implemented"
-      _ -> fail $ "unknown type " ++ t
+      _ -> fail $ "unknown type " ++ unpack t
     validateType _ = fail "not implemented"
 
     isDivisibleBy :: Number -> Number -> Bool
