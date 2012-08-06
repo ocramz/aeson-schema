@@ -201,7 +201,15 @@ validateP schema val = do
     validateType (Choice1of2 t) = case t of
       "string" -> fail "not implemented"
       "number" -> case val of
-        Number n -> return ()
+        Number n -> do
+          let checkMinimum m = if schemaExclusiveMinimum schema
+                               then assert "must be greater than the minimum" (n > m)
+                               else assert "must be greater than or equal the minimum" (n >= m)
+          maybeCheck checkMinimum $ schemaMinimum schema
+          let checkMaximum m = if schemaExclusiveMaximum schema
+                               then assert "must be less than the maximum" (n < m)
+                               else assert "must be less than or equal the maximum" (n <= m)
+          maybeCheck checkMaximum $ schemaMaximum schema
         _ -> fail "not a number"
       "integer" -> case val of
         Number (I _) -> validateType (Choice1of2 "number")
@@ -212,3 +220,12 @@ validateP schema val = do
       "null" -> fail "not implemented"
       "any" -> fail "not implemented"
       _ -> fail $ "unknown type " ++ t
+    validateType _ = fail "not implemented"
+
+    assert :: String -> Bool -> Parser ()
+    assert _ True = return ()
+    assert e False = fail e
+
+    maybeCheck :: (a -> Parser ()) -> Maybe a -> Parser ()
+    maybeCheck p (Just a) = p a
+    maybeCheck _ _ = return ()

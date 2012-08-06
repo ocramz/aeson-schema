@@ -89,6 +89,23 @@ validationTests =
       assertInvalid schema [aesonQQ| { eins: 1, zwei: 2 } |]
       assertInvalid schema [aesonQQ| ["eins", "zwei"] |]
       assertInvalid schema [aesonQQ| null |]
+  , testCase "maximum and minimum" $ do
+      let schemaMinimum3 = [aesonQQ| { "type": "number", "minimum": 3 } |]
+      assertInvalid schemaMinimum3 [aesonQQ| 2 |]
+      assertValid schemaMinimum3 [aesonQQ| 3 |]
+      assertValid schemaMinimum3 [aesonQQ| 4 |]
+      let schemaExclusiveMinimum3 = [aesonQQ| { "type": "number", "minimum": 3, "exclusiveMinimum": true }]
+      assertInvalid schemaExclusiveMinimum3 [aesonQQ| 2 |]
+      assertInvalid schemaExclusiveMinimum3 [aesonQQ| 3 |]
+      assertValid schemaExclusiveMinimum3 [aesonQQ| 4 |]
+      let schemaMaximum3 = [aesonQQ| { "type": "number", "maximum": 3 } |]
+      assertValid schemaMaximum3 [aesonQQ| 2 |]
+      assertValid schemaMaximum3 [aesonQQ| 3 |]
+      assertInvalid schemaMaximum3 [aesonQQ| 4 |]
+      let schemaExclusiveMaximum3 = [aesonQQ| { "type": "number", "maximum": 3, "exclusiveMaximum": true }]
+      assertValid schemaExclusiveMaximum3 [aesonQQ| 2 |]
+      assertInvalid schemaExclusiveMaximum3 [aesonQQ| 3 |]
+      assertInvalid schemaExclusiveMaximum3 [aesonQQ| 4 |]
   ]
   where
     assertValid, assertInvalid :: Value -> Value -> HU.Assertion
