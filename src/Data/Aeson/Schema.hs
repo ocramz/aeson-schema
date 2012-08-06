@@ -5,6 +5,7 @@ module Data.Aeson.Schema
   , empty
   , Fix (..)
   , followReferences
+  , validate
   ) where
 
 import Prelude hiding (foldr)
@@ -15,10 +16,11 @@ import Data.List (concat)
 import Data.Function (fix)
 import Data.Functor ((<$>))
 import Control.Applicative ((<*>))
-import Control.Monad ((=<<), mapM)
+import Control.Monad ((=<<), mapM, msum)
 import Data.Aeson (Value (..), (.:?), (.!=), FromJSON (..))
 import Data.Aeson.Types (Parser (..), emptyObject, emptyArray)
 import qualified Data.Aeson as A
+import Data.Aeson.Types (parse)
 import qualified Data.Vector as V
 import qualified Data.HashMap.Strict as H
 import qualified Data.Map as M
@@ -185,3 +187,28 @@ parseSingleOrArray = singleOrArray parseJSON
 
 followReferences :: (Ord k, Functor f) => M.Map k (f k) -> M.Map k (f (Fix f))
 followReferences input = fix $ \output -> fmap (Fix . (M.!) output) <$> input
+
+validate :: Schema String -> Value -> Maybe String
+validate schema val = case parse (validateP schema) val of
+  A.Error e -> Just e
+  A.Success _ -> Nothing
+
+validateP :: Schema String -> Value -> Parser ()
+validateP schema val = do
+  msum $ map validateType (schemaType schema)
+  where
+    validateType :: Choice2 String (Schema String) -> Parser ()
+    validateType (Choice1of2 t) = case t of
+      "string" -> fail "not implemented"
+      "number" -> case val of
+        Number n -> return ()
+        _ -> fail "not a number"
+      "integer" -> case val of
+        Number (I _) -> validateType (Choice1of2 "number")
+        _ -> fail "not an integer"
+      "boolean" -> fail "not implemented"
+      "object" -> fail "not implemented"
+      "array" -> fail "not implemented"
+      "null" -> fail "not implemented"
+      "any" -> fail "not implemented"
+      _ -> fail $ "unknown type " ++ t

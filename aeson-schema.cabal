@@ -39,6 +39,8 @@ test-suite tests
                        containers,
                        unordered-containers,
                        aeson-schema,
+                       aeson-qq,
+                       attoparsec,
                        template-haskell,
                        test-framework >= 0.6 && < 0.7,
                        test-framework-hunit >= 0.2.7,
