@@ -15,6 +15,7 @@ import Data.Traversable (traverse)
 import Data.List (concat)
 import Data.Function (fix)
 import Data.Functor ((<$>))
+import Data.Ratio
 import Control.Applicative ((<*>))
 import Control.Monad ((=<<), mapM, msum)
 import Data.Aeson (Value (..), (.:?), (.!=), FromJSON (..))
@@ -199,7 +200,9 @@ validateP schema val = do
   where
     validateType :: Choice2 String (Schema String) -> Parser ()
     validateType (Choice1of2 t) = case t of
-      "string" -> fail "not implemented"
+      "string" -> case val of
+        String s -> return ()
+        _ -> fail "not a string"
       "number" -> case val of
         Number n -> do
           let checkMinimum m = if schemaExclusiveMinimum schema
@@ -210,6 +213,8 @@ validateP schema val = do
                                then assert "must be less than the maximum" (n < m)
                                else assert "must be less than or equal the maximum" (n <= m)
           maybeCheck checkMaximum $ schemaMaximum schema
+          let checkDivisibleBy devisor = assert "must be devisible" (n `isDivisibleBy` devisor)
+          maybeCheck checkDivisibleBy $ schemaDivisibleBy schema
         _ -> fail "not a number"
       "integer" -> case val of
         Number (I _) -> validateType (Choice1of2 "number")
@@ -221,6 +226,11 @@ validateP schema val = do
       "any" -> fail "not implemented"
       _ -> fail $ "unknown type " ++ t
     validateType _ = fail "not implemented"
+
+    isDivisibleBy :: Number -> Number -> Bool
+    isDivisibleBy (I i) (I j) = i `mod` j == 0
+    isDivisibleBy a b = a == fromInteger 0 || denominator (approxRational (a / b) epsilon) `elem` [-1,1]
+      where epsilon = D $ 10 ** (-10)
 
     assert :: String -> Bool -> Parser ()
     assert _ True = return ()

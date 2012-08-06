@@ -106,6 +106,26 @@ validationTests =
       assertValid schemaExclusiveMaximum3 [aesonQQ| 2 |]
       assertInvalid schemaExclusiveMaximum3 [aesonQQ| 3 |]
       assertInvalid schemaExclusiveMaximum3 [aesonQQ| 4 |]
+  , testCase "divisibleBy" $ do
+      let by2 = [aesonQQ| { "type": "number", "divisibleBy": 2 } |]
+      assertValid by2 [aesonQQ| 2 |]
+      assertValid by2 [aesonQQ| 4 |]
+      assertValid by2 [aesonQQ| 0 |]
+      assertInvalid by2 [aesonQQ| 1 |]
+      assertInvalid by2 [aesonQQ| 3 |]
+      let byOneAndHalf = [aesonQQ| { "type": "number", "divisibleBy": 1.5 }]
+      assertValid byOneAndHalf [aesonQQ| 1.5 |]
+      assertValid byOneAndHalf [aesonQQ| 3 |]
+      assertValid byOneAndHalf [aesonQQ| 4.5 |]
+      assertInvalid byOneAndHalf [aesonQQ| 2.5 |]
+  , testCase "type: \"string\"" $ do
+      let schema = [aesonQQ| { "type": "string" }]
+      assertInvalid schema [aesonQQ| 3 |]
+      assertInvalid schema [aesonQQ| true |]
+      assertValid schema [aesonQQ| "nobody expects the ..." |]
+      assertInvalid schema [aesonQQ| { eins: 1, zwei: 2 } |]
+      assertInvalid schema [aesonQQ| ["eins", "zwei"] |]
+      assertInvalid schema [aesonQQ| null |]
   ]
   where
     assertValid, assertInvalid :: Value -> Value -> HU.Assertion
