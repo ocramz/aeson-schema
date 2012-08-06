@@ -69,7 +69,7 @@ tests =
 validationTests :: [Test]
 validationTests =
   [ testCase "type: \"number\"" $ do
-      let schema = [aesonQQ| { type: "number" } |]
+      let schema = [aesonQQ| { "type": "number" } |]
       assertValid schema [aesonQQ| 3 |]
       assertValid schema [aesonQQ| 3.5 |]
       assertInvalid schema [aesonQQ| true |]
@@ -78,7 +78,7 @@ validationTests =
       assertInvalid schema [aesonQQ| ["eins", "zwei"] |]
       assertInvalid schema [aesonQQ| null |]
   , testCase "type: \"integer\"" $ do
-      let schema = [aesonQQ| { type: "integer" } |]
+      let schema = [aesonQQ| { "type": "integer" } |]
       -- unfortunately, we can't use aesonQQ to test integer validation
       -- because aesonQQ makes no distinction between integers and floating-point
       -- numbers
@@ -126,6 +126,15 @@ validationTests =
       assertInvalid schema [aesonQQ| { eins: 1, zwei: 2 } |]
       assertInvalid schema [aesonQQ| ["eins", "zwei"] |]
       assertInvalid schema [aesonQQ| null |]
+  , testCase "minLength and maxLength" $ do
+      let minLength2 = [aesonQQ| { "type": "string", "minLength": 2 } |]
+      assertInvalid minLength2 [aesonQQ| "" |]
+      assertInvalid minLength2 [aesonQQ| "a" |]
+      assertValid minLength2 [aesonQQ| "aa" |]
+      let maxLength5 = [aesonQQ| { "type": "string", "maxLength": 5 } |]
+      assertValid maxLength5 [aesonQQ| "" |]
+      assertValid maxLength5 [aesonQQ| "lorem" |]
+      assertInvalid maxLength5 [aesonQQ| "lorem ipsum" |]
   ]
   where
     assertValid, assertInvalid :: Value -> Value -> HU.Assertion

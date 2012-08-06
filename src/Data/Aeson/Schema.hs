@@ -8,7 +8,7 @@ module Data.Aeson.Schema
   , validate
   ) where
 
-import Prelude hiding (foldr)
+import Prelude hiding (foldr, length)
 import Data.Maybe (fromMaybe, maybe)
 import Data.Foldable (Foldable (..), toList)
 import Data.Traversable (traverse)
@@ -25,7 +25,7 @@ import Data.Aeson.Types (parse)
 import qualified Data.Vector as V
 import qualified Data.HashMap.Strict as H
 import qualified Data.Map as M
-import Data.Text (Text (..), unpack)
+import Data.Text (Text (..), unpack, length)
 import Data.Attoparsec.Number (Number (..))
 
 import Data.Aeson.Schema.Choice
@@ -201,19 +201,23 @@ validateP schema val = do
     validateType :: Choice2 String (Schema String) -> Parser ()
     validateType (Choice1of2 t) = case t of
       "string" -> case val of
-        String s -> return ()
+        String s -> do
+          let checkMinLength l = assert (length s >= l) $ "length of string must be at least " ++ show l
+          checkMinLength $ schemaMinLength schema
+          let checkMaxLength l = assert (length s <= l) $ "length of string must be at most " ++ show l
+          maybeCheck checkMaxLength (schemaMaxLength schema)
         _ -> fail "not a string"
       "number" -> case val of
         Number n -> do
           let checkMinimum m = if schemaExclusiveMinimum schema
-                               then assert "must be greater than the minimum" (n > m)
-                               else assert "must be greater than or equal the minimum" (n >= m)
+                               then assert (n > m)  $ "number must be greater than " ++ show m
+                               else assert (n >= m) $ "number must be greater than or equal " ++ show m
           maybeCheck checkMinimum $ schemaMinimum schema
           let checkMaximum m = if schemaExclusiveMaximum schema
-                               then assert "must be less than the maximum" (n < m)
-                               else assert "must be less than or equal the maximum" (n <= m)
+                               then assert (n < m)  $ "number must be less than " ++ show m
+                               else assert (n <= m) $ "number must be less than or equal " ++ show m
           maybeCheck checkMaximum $ schemaMaximum schema
-          let checkDivisibleBy devisor = assert "must be devisible" (n `isDivisibleBy` devisor)
+          let checkDivisibleBy devisor = assert (n `isDivisibleBy` devisor) $ "number must be devisible by " ++ show devisor
           maybeCheck checkDivisibleBy $ schemaDivisibleBy schema
         _ -> fail "not a number"
       "integer" -> case val of
@@ -232,9 +236,9 @@ validateP schema val = do
     isDivisibleBy a b = a == fromInteger 0 || denominator (approxRational (a / b) epsilon) `elem` [-1,1]
       where epsilon = D $ 10 ** (-10)
 
-    assert :: String -> Bool -> Parser ()
-    assert _ True = return ()
-    assert e False = fail e
+    assert :: Bool -> String -> Parser ()
+    assert True _ = return ()
+    assert False e = fail e
 
     maybeCheck :: (a -> Parser ()) -> Maybe a -> Parser ()
     maybeCheck p (Just a) = p a
