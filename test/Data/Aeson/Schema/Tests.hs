@@ -135,6 +135,11 @@ validationTests =
       assertValid maxLength5 [aesonQQ| "" |]
       assertValid maxLength5 [aesonQQ| "lorem" |]
       assertInvalid maxLength5 [aesonQQ| "lorem ipsum" |]
+  , testCase "pattern" $ do
+      assertInvalid [aesonQQ| { "type": "string", "pattern": ".+" } |] ""
+      assertValid [aesonQQ| { "type": "string", "pattern": ".+" } |] "one does not simply ..."
+      assertValid [aesonQQ| { "type": "string", "pattern": "^([a-z][0-9])+$" } |] "h8w2o8e3"
+      assertInvalid [aesonQQ| { "type": "string", "pattern": "^([a-z][0-9])+$" } |] "h8w2o8e35"
   ]
   where
     assertValid, assertInvalid :: Value -> Value -> HU.Assertion

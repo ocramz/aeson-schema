@@ -13,11 +13,11 @@ import Data.Maybe (fromMaybe, maybe)
 import Data.Foldable (Foldable (..), toList)
 import Data.Traversable (traverse)
 import Data.List (concat)
-import Data.Function (fix)
+import Data.Function (fix, on)
 import Data.Functor ((<$>))
 import Data.Ratio
 import Control.Applicative ((<*>))
-import Control.Monad ((=<<), mapM, msum)
+import Control.Monad ((=<<), mapM, msum, liftM)
 import Data.Aeson (Value (..), (.:?), (.!=), FromJSON (..))
 import Data.Aeson.Types (Parser (..), emptyObject, emptyArray)
 import qualified Data.Aeson as A
@@ -27,10 +27,26 @@ import qualified Data.HashMap.Strict as H
 import qualified Data.Map as M
 import Data.Text (Text (..), unpack, length)
 import Data.Attoparsec.Number (Number (..))
+import Text.Regex.PCRE (makeRegexM, match)
+import Text.Regex.PCRE.String (Regex)
 
 import Data.Aeson.Schema.Choice
 
 type Map a = H.HashMap Text a
+
+data Pattern = Pattern { patternSource :: Text, patternCompiled :: Regex }
+
+instance Eq Pattern where
+  (==) = (==) `on` patternSource
+
+instance Show Pattern where
+  show pattern = "let Right p = mkPattern (" ++ show (patternSource pattern) ++ ") in p"
+
+instance FromJSON Pattern where
+  parseJSON (String s) = mkPattern s
+
+mkPattern :: (Monad m) => Text -> m Pattern
+mkPattern t = liftM (Pattern t) $ makeRegexM (unpack t)
 
 data Schema ref = Schema
   { schemaType :: [Choice2 Text (Schema ref)]
@@ -48,7 +64,7 @@ data Schema ref = Schema
   , schemaMinItems :: Int
   , schemaMaxItems :: Maybe Int
   , schemaUniqueItems :: Bool
-  , schemaPattern :: Maybe Text
+  , schemaPattern :: Maybe Pattern
   , schemaMinLength :: Int
   , schemaMaxLength :: Maybe Int
   , schemaEnum :: Maybe [Value]
@@ -206,6 +222,8 @@ validateP schema val = do
           checkMinLength $ schemaMinLength schema
           let checkMaxLength l = assert (length s <= l) $ "length of string must be at most " ++ show l
           maybeCheck checkMaxLength (schemaMaxLength schema)
+          let checkPattern (Pattern source compiled) = assert (match compiled $ unpack s) $ "string must match pattern " ++ show source
+          maybeCheck checkPattern $ schemaPattern schema
         _ -> fail "not a string"
       "number" -> case val of
         Number n -> do
