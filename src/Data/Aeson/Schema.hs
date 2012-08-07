@@ -17,7 +17,7 @@ import Data.Function (fix, on)
 import Data.Functor ((<$>))
 import Data.Ratio
 import Control.Applicative ((<*>))
-import Control.Monad ((=<<), mapM, msum, liftM)
+import Control.Monad ((=<<), mapM, sequence_, msum, liftM)
 import Data.Aeson (Value (..), (.:?), (.!=), FromJSON (..))
 import Data.Aeson.Types (Parser (..), emptyObject, emptyArray)
 import qualified Data.Aeson as A
@@ -257,7 +257,8 @@ validateP schema val = do
           let checkItems items = case items of
                 Choice1of3 _ -> fail "not implemented"
                 Choice2of3 s -> assert (V.all (isNothing . validate s) a) "all items in the array must validate against the schema given in 'items'"
-                Choice3of3 _ -> fail "not implemented"
+                Choice3of3 ss -> do
+                  sequence_ $ zipWith validateP ss (V.toList a)
           maybeCheck checkItems $ schemaItems schema
         _ -> fail "not an array"
       "null" -> case val of

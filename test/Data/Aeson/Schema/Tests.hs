@@ -187,6 +187,17 @@ validationTests =
       let onlyStrings = [aesonQQ| { "type": "array", "items": { "type": "string" } } |]
       assertValid onlyStrings [aesonQQ| ["one", "two", "three"] |]
       assertInvalid onlyStrings [aesonQQ| ["one", "two", "three", 4] |]
+      let stringNumberNull = [aesonQQ| {
+            "type": "array", "items": [ { "type": "string" }, { "type": "number" }, { "type": "null" } ]
+          } |]
+      assertValid stringNumberNull [aesonQQ| [] |]
+      assertInvalid stringNumberNull [aesonQQ| [3] |]
+      assertValid stringNumberNull [aesonQQ| ["lorem"] |]
+      assertValid stringNumberNull [aesonQQ| ["lorem", 3] |]
+      assertInvalid stringNumberNull [aesonQQ| ["ipsum", null] |]
+      assertValid stringNumberNull [aesonQQ| ["lorem", 3, null] |]
+      assertInvalid stringNumberNull [aesonQQ| ["lorem", 3, 4] |]
+      assertValid stringNumberNull [aesonQQ| ["lorem", 3, null, 1, 2, 3] |]
   ]
   where
     assertValid, assertInvalid :: Value -> Value -> HU.Assertion
