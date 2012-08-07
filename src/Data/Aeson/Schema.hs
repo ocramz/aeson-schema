@@ -9,7 +9,7 @@ module Data.Aeson.Schema
   ) where
 
 import Prelude hiding (foldr, length)
-import Data.Maybe (fromMaybe, maybe)
+import Data.Maybe (fromMaybe, maybe, isNothing)
 import Data.Foldable (Foldable (..), toList)
 import Data.Traversable (traverse)
 import qualified Data.List as L
@@ -254,6 +254,11 @@ validateP schema val = do
           maybeCheck checkMaxItems $ schemaMaxItems schema
           let checkUnique = assert (L.length (L.nub $ V.toList a) == len) "all array items must be unique"
           if schemaUniqueItems schema then checkUnique else return ()
+          let checkItems items = case items of
+                Choice1of3 _ -> fail "not implemented"
+                Choice2of3 s -> assert (V.all (isNothing . validate s) a) "all items in the array must validate against the schema given in 'items'"
+                Choice3of3 _ -> fail "not implemented"
+          maybeCheck checkItems $ schemaItems schema
         _ -> fail "not an array"
       "null" -> case val of
         Null -> return ()

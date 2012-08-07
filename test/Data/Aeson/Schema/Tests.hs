@@ -180,6 +180,13 @@ validationTests =
       assertInvalid schema [aesonQQ| [1, 2, 1] |]
       assertValid schema [aesonQQ| [{ "lorem": "ipsum" }, 2, { "ipsum": "lorem" }] |]
       assertInvalid schema [aesonQQ| [{ "lorem": "ipsum" }, 2, { "lorem": "ipsum" }] |]
+  , testCase "items" $ do
+      let onlyNumbers = [aesonQQ| { "type": "array", "items": { "type": "number" } } |]
+      assertValid onlyNumbers [aesonQQ| [1, 2, 3] |]
+      assertInvalid onlyNumbers [aesonQQ| [1, 2, 3, "four"] |]
+      let onlyStrings = [aesonQQ| { "type": "array", "items": { "type": "string" } } |]
+      assertValid onlyStrings [aesonQQ| ["one", "two", "three"] |]
+      assertInvalid onlyStrings [aesonQQ| ["one", "two", "three", 4] |]
   ]
   where
     assertValid, assertInvalid :: Value -> Value -> HU.Assertion
