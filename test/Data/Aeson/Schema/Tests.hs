@@ -198,6 +198,23 @@ validationTests =
       assertValid stringNumberNull [aesonQQ| ["lorem", 3, null] |]
       assertInvalid stringNumberNull [aesonQQ| ["lorem", 3, 4] |]
       assertValid stringNumberNull [aesonQQ| ["lorem", 3, null, 1, 2, 3] |]
+  , testCase "additionalItems" $ do
+      let allowed = [aesonQQ| {
+            "type": "array", "items": [ { "type": "string" }, { "type": "number" } ], "additionalItems": true
+          } |]
+      assertValid allowed [aesonQQ| ["abc", 123] |]
+      assertValid allowed [aesonQQ| ["abc", 123, [], null, true] |]
+      let forbidden = [aesonQQ| {
+            "type": "array", "items": [ { "type": "string" }, { "type": "number" } ], "additionalItems": false
+          } |]
+      assertValid forbidden [aesonQQ| ["abc", 123] |]
+      assertInvalid forbidden [aesonQQ| ["abc", 123, [], null, true] |]
+      let onlyNulls = [aesonQQ| {
+            "type": "array", "items": [ { "type": "string" }, { "type": "number" } ], "additionalItems": { "type": "null" }
+          } |]
+      assertValid onlyNulls [aesonQQ| ["abc", 123] |]
+      assertInvalid onlyNulls [aesonQQ| ["abc", 123, [], null, true] |]
+      assertValid onlyNulls [aesonQQ| ["abc", 123, null, null, null, null] |]
   ]
   where
     assertValid, assertInvalid :: Value -> Value -> HU.Assertion

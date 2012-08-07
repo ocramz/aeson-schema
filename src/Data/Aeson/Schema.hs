@@ -248,17 +248,24 @@ validateP schema val = do
       "array" -> case val of
         Array a -> do
           let len = V.length a
+          let list = V.toList a
           let checkMinItems m = assert (len >= m) $ "array must have at least " ++ show m ++ " items"
           checkMinItems $ schemaMinItems schema
           let checkMaxItems m = assert (len <= m) $ "array must have at most " ++ show m ++ " items"
           maybeCheck checkMaxItems $ schemaMaxItems schema
-          let checkUnique = assert (L.length (L.nub $ V.toList a) == len) "all array items must be unique"
+          let checkUnique = assert (L.length (L.nub list) == len) "all array items must be unique"
           if schemaUniqueItems schema then checkUnique else return ()
           let checkItems items = case items of
                 Choice1of3 _ -> fail "not implemented"
                 Choice2of3 s -> assert (V.all (isNothing . validate s) a) "all items in the array must validate against the schema given in 'items'"
                 Choice3of3 ss -> do
-                  sequence_ $ zipWith validateP ss (V.toList a)
+                  sequence_ $ zipWith validateP ss list
+                  let additionalItems = drop (L.length ss) list
+                  let checkAdditionalItems ai = case ai of
+                        Choice1of3 _ -> fail "not implemented"
+                        Choice2of3 b -> assert (b || L.null additionalItems) $ "no additional items allowed"
+                        Choice3of3 additionalSchema -> sequence_ $ map (validateP additionalSchema) additionalItems
+                  checkAdditionalItems $ schemaAdditionalItems schema
           maybeCheck checkItems $ schemaItems schema
         _ -> fail "not an array"
       "null" -> case val of
