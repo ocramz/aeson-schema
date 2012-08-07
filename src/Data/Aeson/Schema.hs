@@ -246,7 +246,12 @@ validateP schema val = do
         _ -> fail "not a boolean"
       "object" -> fail "not implemented"
       "array" -> case val of
-        Array _ -> return ()
+        Array a -> do
+          let len = V.length a
+          let checkMinItems m = assert (len >= m) $ "array must have at least " ++ show m ++ " items"
+          checkMinItems $ schemaMinItems schema
+          let checkMaxItems m = assert (len <= m) $ "array must have at most " ++ show m ++ " items"
+          maybeCheck checkMaxItems $ schemaMaxItems schema
         _ -> fail "not an array"
       "null" -> case val of
         Null -> return ()
