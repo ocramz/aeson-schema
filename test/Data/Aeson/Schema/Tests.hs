@@ -140,6 +140,14 @@ validationTests =
       assertValid [aesonQQ| { "type": "string", "pattern": ".+" } |] "one does not simply ..."
       assertValid [aesonQQ| { "type": "string", "pattern": "^([a-z][0-9])+$" } |] "h8w2o8e3"
       assertInvalid [aesonQQ| { "type": "string", "pattern": "^([a-z][0-9])+$" } |] "h8w2o8e35"
+  , testCase "type: \"boolean\"" $ do
+      let schema = [aesonQQ| { "type": "boolean" }]
+      assertInvalid schema [aesonQQ| 3 |]
+      assertValid schema [aesonQQ| true |]
+      assertInvalid schema [aesonQQ| "nobody expects the ..." |]
+      assertInvalid schema [aesonQQ| { eins: 1, zwei: 2 } |]
+      assertInvalid schema [aesonQQ| ["eins", "zwei"] |]
+      assertInvalid schema [aesonQQ| null |]
   ]
   where
     assertValid, assertInvalid :: Value -> Value -> HU.Assertion

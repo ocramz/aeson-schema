@@ -241,7 +241,9 @@ validateP schema val = do
       "integer" -> case val of
         Number (I _) -> validateType (Choice1of2 "number")
         _ -> fail "not an integer"
-      "boolean" -> fail "not implemented"
+      "boolean" -> case val of
+        Bool _ -> return ()
+        _ -> fail "not a boolean"
       "object" -> fail "not implemented"
       "array" -> fail "not implemented"
       "null" -> fail "not implemented"
