@@ -173,6 +173,13 @@ validationTests =
       assertValid max3 [aesonQQ| [] |]
       assertValid max3 [aesonQQ| [1, true, null] |]
       assertInvalid max3 [aesonQQ| [1, true, null, "lorem"] |]
+  , testCase "uniqueItems" $ do
+      let schema = [aesonQQ| { "type": "array", "uniqueItems": true } |]
+      assertValid schema [aesonQQ| [] |]
+      assertValid schema [aesonQQ| [1, 2] |]
+      assertInvalid schema [aesonQQ| [1, 2, 1] |]
+      assertValid schema [aesonQQ| [{ "lorem": "ipsum" }, 2, { "ipsum": "lorem" }] |]
+      assertInvalid schema [aesonQQ| [{ "lorem": "ipsum" }, 2, { "lorem": "ipsum" }] |]
   ]
   where
     assertValid, assertInvalid :: Value -> Value -> HU.Assertion

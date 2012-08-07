@@ -12,7 +12,7 @@ import Prelude hiding (foldr, length)
 import Data.Maybe (fromMaybe, maybe)
 import Data.Foldable (Foldable (..), toList)
 import Data.Traversable (traverse)
-import Data.List (concat)
+import qualified Data.List as L
 import Data.Function (fix, on)
 import Data.Functor ((<$>))
 import Data.Ratio
@@ -252,6 +252,8 @@ validateP schema val = do
           checkMinItems $ schemaMinItems schema
           let checkMaxItems m = assert (len <= m) $ "array must have at most " ++ show m ++ " items"
           maybeCheck checkMaxItems $ schemaMaxItems schema
+          let checkUnique = assert (L.length (L.nub $ V.toList a) == len) "all array items must be unique"
+          if schemaUniqueItems schema then checkUnique else return ()
         _ -> fail "not an array"
       "null" -> case val of
         Null -> return ()
