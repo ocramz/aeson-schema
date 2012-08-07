@@ -245,7 +245,9 @@ validateP schema val = do
         Bool _ -> return ()
         _ -> fail "not a boolean"
       "object" -> fail "not implemented"
-      "array" -> fail "not implemented"
+      "array" -> case val of
+        Array _ -> return ()
+        _ -> fail "not an array"
       "null" -> case val of
         Null -> return ()
         _ -> fail "not null"
