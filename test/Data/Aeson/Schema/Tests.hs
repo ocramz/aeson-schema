@@ -148,6 +148,14 @@ validationTests =
       assertInvalid schema [aesonQQ| { eins: 1, zwei: 2 } |]
       assertInvalid schema [aesonQQ| ["eins", "zwei"] |]
       assertInvalid schema [aesonQQ| null |]
+  , testCase "type: \"null\"" $ do
+      let schema = [aesonQQ| { "type": "null" }]
+      assertInvalid schema [aesonQQ| 3 |]
+      assertInvalid schema [aesonQQ| true |]
+      assertInvalid schema [aesonQQ| "nobody expects the ..." |]
+      assertInvalid schema [aesonQQ| { eins: 1, zwei: 2 } |]
+      assertInvalid schema [aesonQQ| ["eins", "zwei"] |]
+      assertValid schema [aesonQQ| null |]
   ]
   where
     assertValid, assertInvalid :: Value -> Value -> HU.Assertion

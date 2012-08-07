@@ -246,7 +246,9 @@ validateP schema val = do
         _ -> fail "not a boolean"
       "object" -> fail "not implemented"
       "array" -> fail "not implemented"
-      "null" -> fail "not implemented"
+      "null" -> case val of
+        Null -> return ()
+        _ -> fail "not null"
       "any" -> fail "not implemented"
       _ -> fail $ "unknown type " ++ unpack t
     validateType _ = fail "not implemented"
