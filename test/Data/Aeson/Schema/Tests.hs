@@ -259,6 +259,27 @@ validationTests =
       assertInvalid schema $ object [("positiveNumber", Number (fromRational (27 % 2)))]
       assertValid schema [aesonQQ| { "fooString": "foo", "barString": "bar" } |]
       assertInvalid schema [aesonQQ| { "fooString": null, "barString": "bar" } |]
+  , testCase "additionalProperties" $ do
+      let additionalNumbers = [aesonQQ| {
+            "type": "object",
+            "properties": { "null": { "type": "null" } },
+            "patternProperties": {
+              ".+String$": { "type": "string" }
+            },
+            "additionalProperties": { "type": "number" }
+          } |]
+      assertValid additionalNumbers [aesonQQ| { "null": null, "emptyString": "", "oneMoreThing": 23, "theLastThing": 999 } |]
+      assertInvalid additionalNumbers [aesonQQ| { "null": null, "notANumber": true } |]
+      let noAdditionalProperties = [aesonQQ| {
+            "type": "object",
+            "properties": { "null": { "type": "null" } },
+            "patternProperties": {
+              ".+String$": { "type": "string" }
+            },
+            "additionalProperties": false
+          } |]
+      assertValid noAdditionalProperties [aesonQQ| { "null": null, "emptyString": "" } |]
+      assertInvalid noAdditionalProperties [aesonQQ| { "null": null, "emptyString": "", "oneMoreThing": 23, "theLastThing": 999 } |]
   ]
   where
     assertValid, assertInvalid :: Value -> Value -> HU.Assertion

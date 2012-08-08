@@ -20,7 +20,7 @@ import Data.Functor ((<$>))
 import Data.Ratio
 import Control.Applicative ((<*>))
 import Control.Arrow (second)
-import Control.Monad ((=<<), mapM, forM_, sequence_, msum, liftM)
+import Control.Monad ((=<<), mapM, forM_, sequence_, msum, liftM, when)
 import Data.Aeson (Value (..), (.:?), (.!=), FromJSON (..))
 import Data.Aeson.Types (Parser (..), emptyObject, emptyArray)
 import qualified Data.Aeson as A
@@ -254,6 +254,12 @@ validateP schema val = do
             maybeCheck (\propSchema -> validateP propSchema v) maybeProperty
             let patternProps = filter (flip match (unpack k) . patternCompiled . fst) $ schemaPatternProperties schema
             forM_ patternProps $ flip validateP v . snd
+            let checkAdditionalProperties ap = case ap of
+                  Choice1of3 _ -> fail "not implemented"
+                  Choice2of3 b -> assert b $ "additional property " ++ unpack k ++ " is not allowed"
+                  Choice3of3 s -> validateP s v
+            when (isNothing maybeProperty && L.null patternProps) $ do
+              checkAdditionalProperties (schemaAdditionalProperties schema)
         _ -> fail "not an object"
       "array" -> case val of
         Array a -> do
