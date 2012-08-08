@@ -292,6 +292,17 @@ validationTests =
       assertInvalid oneTwoMapping [aesonQQ| { "eins": 1, "zwei": 2, "drei": 3 } |]
       assertValid oneTwoMapping [aesonQQ| { "un": 1, "deux": 2 } |]
       assertInvalid oneTwoMapping [aesonQQ| { "one": 1, "two": 2 } |]
+  , testCase "type: \"any\"" $ do
+      let schema = [aesonQQ| { "type": "any", "minimum": 2, "maxItems": 2, "pattern": "a$" } |]
+      assertValid schema [aesonQQ| "a" |]
+      assertInvalid schema [aesonQQ| "b" |]
+      assertValid schema [aesonQQ| 3 |]
+      assertInvalid schema [aesonQQ| 1 |]
+      assertValid schema [aesonQQ| null |]
+      assertValid schema [aesonQQ| true |]
+      assertValid schema [aesonQQ| { "une": 1 } |]
+      assertValid schema [aesonQQ| [true, false] |]
+      assertInvalid schema [aesonQQ| [true, false, true] |]
   , testCase "disallow" $ do
       let onlyFloats = [aesonQQ| { "type": "number", "disallow": "integer" } |]
       assertInvalid onlyFloats (Number $ fromInteger 3)
@@ -302,6 +313,14 @@ validationTests =
       assertValid notLengthThree [aesonQQ| [1, 2] |]
       assertInvalid notLengthThree [aesonQQ| [1, 2, 3] |]
       assertValid notLengthThree [aesonQQ| [1, 2, 3, 4] |]
+      let everythingExceptNumbers = [aesonQQ| { "disallow": "number" } |]
+      assertInvalid everythingExceptNumbers [aesonQQ| 3 |]
+      assertInvalid everythingExceptNumbers [aesonQQ| 3.5 |]
+      assertValid everythingExceptNumbers [aesonQQ| true |]
+      assertValid everythingExceptNumbers [aesonQQ| "nobody expects the ..." |]
+      assertValid everythingExceptNumbers [aesonQQ| { eins: 1, zwei: 2 } |]
+      assertValid everythingExceptNumbers [aesonQQ| ["eins", "zwei"] |]
+      assertValid everythingExceptNumbers [aesonQQ| null |]
   ]
   where
     assertValid, assertInvalid :: Value -> Value -> HU.Assertion

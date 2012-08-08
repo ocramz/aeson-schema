@@ -290,7 +290,8 @@ validateP schema val = do
       "null" -> case val of
         Null -> return ()
         _ -> fail "not null"
-      "any" -> fail "not implemented"
+      "any" -> do
+        msum $ map (validateType . Choice1of2) ["string", "number", "boolean", "object", "array", "null"]
       _ -> fail $ "unknown type " ++ unpack t
     validateType _ = fail "not implemented"
 
