@@ -1,7 +1,9 @@
-{-# LANGUAGE OverloadedStrings, FlexibleInstances #-}
+{-# LANGUAGE OverloadedStrings, FlexibleInstances, TupleSections #-}
 
 module Data.Aeson.Schema
   ( Schema (..)
+  , Pattern (..)
+  , mkPattern
   , empty
   , Fix (..)
   , followReferences
@@ -17,6 +19,7 @@ import Data.Function (fix, on)
 import Data.Functor ((<$>))
 import Data.Ratio
 import Control.Applicative ((<*>))
+import Control.Arrow (second)
 import Control.Monad ((=<<), mapM, sequence_, msum, liftM)
 import Data.Aeson (Value (..), (.:?), (.!=), FromJSON (..))
 import Data.Aeson.Types (Parser (..), emptyObject, emptyArray)
@@ -51,7 +54,7 @@ mkPattern t = liftM (Pattern t) $ makeRegexM (unpack t)
 data Schema ref = Schema
   { schemaType :: [Choice2 Text (Schema ref)]
   , schemaProperties :: Map (Schema ref)
-  , schemaPatternProperties :: Map (Schema ref)
+  , schemaPatternProperties :: [(Pattern, Schema ref)]
   , schemaAdditionalProperties :: Choice3 Text Bool (Schema ref)
   , schemaItems :: Maybe (Choice3 Text (Schema ref) [Schema ref])
   , schemaAdditionalItems :: Choice3 Text Bool (Schema ref)
@@ -85,7 +88,7 @@ instance Functor Schema where
   fmap f s = s
     { schemaType = choice2 id (fmap f) <$> schemaType s
     , schemaProperties = fmap f <$> schemaProperties s
-    , schemaPatternProperties = fmap f <$> schemaPatternProperties s
+    , schemaPatternProperties = second (fmap f) <$> schemaPatternProperties s
     , schemaAdditionalProperties = choice3 id id (fmap f) (schemaAdditionalProperties s)
     , schemaItems = choice3 id (fmap f) (fmap $ fmap f) <$> schemaItems s
     , schemaAdditionalItems = choice3 id id (fmap f) (schemaAdditionalItems s)
@@ -98,7 +101,7 @@ instance Functor Schema where
 instance Foldable Schema where
   foldr f start s = ffoldr (ffoldr f) (choice2of2s $ schemaType s)
                   . ffoldr (ffoldr f) (schemaProperties s)
-                  . ffoldr (ffoldr f) (schemaPatternProperties s)
+                  . ffoldr (ffoldr f) (map snd $ schemaPatternProperties s)
                   . foldChoice3of3 (ffoldr f) (schemaAdditionalProperties s)
                   . ffoldr (\items -> foldChoice2of3 (ffoldr f) items . foldChoice3of3 (ffoldr $ ffoldr f) items) (schemaItems s)
                   . foldChoice3of3 (ffoldr f) (schemaAdditionalItems s)
@@ -121,7 +124,7 @@ empty :: Schema ref
 empty = Schema
   { schemaType = []
   , schemaProperties = H.empty
-  , schemaPatternProperties = H.empty
+  , schemaPatternProperties = []
   , schemaAdditionalProperties = Choice2of3 True
   , schemaItems = Nothing
   , schemaAdditionalItems = Choice2of3 True
@@ -157,7 +160,7 @@ instance (FromJSON ref) => FromJSON (Schema ref) where
   parseJSON (Object o) =
     Schema <$> (parseSingleOrArray =<< parseFieldDefault "type" "any")
            <*> parseFieldDefault "properties" emptyObject
-           <*> parseFieldDefault "patternProperties" emptyObject
+           <*> (parseFieldDefault "patternProperties" emptyObject >>= mapM (\(k, v) -> fmap (,v) (mkPattern k)) . H.toList)
            <*> (parseField "additionalProperties" .!= Choice2of3 True)
            <*> parseField "items"
            <*> (parseField "additionalItems" .!= Choice2of3 True)
@@ -244,7 +247,9 @@ validateP schema val = do
       "boolean" -> case val of
         Bool _ -> return ()
         _ -> fail "not a boolean"
-      "object" -> fail "not implemented"
+      "object" -> case val of
+        Object o -> return ()
+        _ -> fail "not an object"
       "array" -> case val of
         Array a -> do
           let len = V.length a

@@ -53,7 +53,7 @@ tests =
       let schema = empty
             { schemaType = [Choice2of2 $ schemaWithRef "a"]
             , schemaProperties = H.fromList [("aProperty", schemaWithRef "b")]
-            , schemaPatternProperties = H.fromList [("lorem.+", schemaWithRef "c")]
+            , schemaPatternProperties = let Right p = mkPattern "lorem.+" in [(p, schemaWithRef "c")]
             , schemaAdditionalProperties = Choice3of3 $ schemaWithRef "d"
             , schemaItems = Just $ Choice3of3 [schemaWithRef "e", schemaWithRef "f"]
             , schemaAdditionalItems = Choice3of3 $ schemaWithRef "g"
@@ -86,7 +86,7 @@ validationTests =
       assertInvalid schema [aesonQQ| 3.5 |]
       assertInvalid schema [aesonQQ| true |]
       assertInvalid schema [aesonQQ| "nobody expects the ..." |]
-      assertInvalid schema [aesonQQ| { eins: 1, zwei: 2 } |]
+      assertInvalid schema [aesonQQ| { "eins": 1, "zwei": 2 } |]
       assertInvalid schema [aesonQQ| ["eins", "zwei"] |]
       assertInvalid schema [aesonQQ| null |]
   , testCase "maximum and minimum" $ do
@@ -123,7 +123,7 @@ validationTests =
       assertInvalid schema [aesonQQ| 3 |]
       assertInvalid schema [aesonQQ| true |]
       assertValid schema [aesonQQ| "nobody expects the ..." |]
-      assertInvalid schema [aesonQQ| { eins: 1, zwei: 2 } |]
+      assertInvalid schema [aesonQQ| { "eins": 1, "zwei": 2 } |]
       assertInvalid schema [aesonQQ| ["eins", "zwei"] |]
       assertInvalid schema [aesonQQ| null |]
   , testCase "minLength and maxLength" $ do
@@ -145,7 +145,7 @@ validationTests =
       assertInvalid schema [aesonQQ| 3 |]
       assertValid schema [aesonQQ| true |]
       assertInvalid schema [aesonQQ| "nobody expects the ..." |]
-      assertInvalid schema [aesonQQ| { eins: 1, zwei: 2 } |]
+      assertInvalid schema [aesonQQ| { "eins": 1, "zwei": 2 } |]
       assertInvalid schema [aesonQQ| ["eins", "zwei"] |]
       assertInvalid schema [aesonQQ| null |]
   , testCase "type: \"null\"" $ do
@@ -153,7 +153,7 @@ validationTests =
       assertInvalid schema [aesonQQ| 3 |]
       assertInvalid schema [aesonQQ| true |]
       assertInvalid schema [aesonQQ| "nobody expects the ..." |]
-      assertInvalid schema [aesonQQ| { eins: 1, zwei: 2 } |]
+      assertInvalid schema [aesonQQ| { "eins": 1, "zwei": 2 } |]
       assertInvalid schema [aesonQQ| ["eins", "zwei"] |]
       assertValid schema [aesonQQ| null |]
   , testCase "type: \"array\"" $ do
@@ -161,7 +161,7 @@ validationTests =
       assertInvalid schema [aesonQQ| 3 |]
       assertInvalid schema [aesonQQ| true |]
       assertInvalid schema [aesonQQ| "nobody expects the ..." |]
-      assertInvalid schema [aesonQQ| { eins: 1, zwei: 2 } |]
+      assertInvalid schema [aesonQQ| { "eins": 1, "zwei": 2 } |]
       assertValid schema [aesonQQ| ["eins", "zwei"] |]
       assertInvalid schema [aesonQQ| null |]
   , testCase "minItems and maxItems" $ do
@@ -215,6 +215,14 @@ validationTests =
       assertValid onlyNulls [aesonQQ| ["abc", 123] |]
       assertInvalid onlyNulls [aesonQQ| ["abc", 123, [], null, true] |]
       assertValid onlyNulls [aesonQQ| ["abc", 123, null, null, null, null] |]
+  , testCase "type: \"object\"" $ do
+      let schema = [aesonQQ| { "type": "object" }]
+      assertInvalid schema [aesonQQ| 3 |]
+      assertInvalid schema [aesonQQ| true |]
+      assertInvalid schema [aesonQQ| "nobody expects the ..." |]
+      assertValid schema [aesonQQ| { "eins": 1, "zwei": 2 } |]
+      assertInvalid schema [aesonQQ| ["eins", "zwei"] |]
+      assertInvalid schema [aesonQQ| null |]
   ]
   where
     assertValid, assertInvalid :: Value -> Value -> HU.Assertion
