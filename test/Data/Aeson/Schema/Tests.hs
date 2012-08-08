@@ -365,6 +365,11 @@ validationTests =
       assertValid everythingExceptNumbers [aesonQQ| { eins: 1, zwei: 2 } |]
       assertValid everythingExceptNumbers [aesonQQ| ["eins", "zwei"] |]
       assertValid everythingExceptNumbers [aesonQQ| null |]
+  , testGroup "format"
+      [ testCase "regex" $ do
+          assertValid [aesonQQ| { "type": "string", "format": "regex" } |] "([abc])+\\s+$"
+          assertInvalid [aesonQQ| { "type": "string", "format": "regex" } |] "^(abc]"
+      ]
   ]
   where
     assertValid, assertInvalid :: Value -> Value -> HU.Assertion

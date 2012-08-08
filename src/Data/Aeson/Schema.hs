@@ -20,7 +20,7 @@ import Data.Functor ((<$>))
 import Data.Ratio
 import Control.Applicative ((<*>))
 import Control.Arrow (second)
-import Control.Monad ((=<<), mapM, forM_, sequence_, msum, liftM, when)
+import Control.Monad ((=<<), mapM, forM_, sequence_, msum, liftM, when, void)
 import Data.Aeson (Value (..), (.:?), (.!=), FromJSON (..))
 import Data.Aeson.Types (Parser (..), emptyObject, emptyArray)
 import qualified Data.Aeson as A
@@ -230,6 +230,22 @@ validateP schema val = do
           maybeCheck checkMaxLength (schemaMaxLength schema)
           let checkPattern (Pattern source compiled) = assert (match compiled $ unpack s) $ "string must match pattern " ++ show source
           maybeCheck checkPattern $ schemaPattern schema
+          let checkFormat format = case format of
+                "date-time" -> return ()
+                "data" -> return ()
+                "time" -> return ()
+                "utc-millisec" -> return ()
+                "regex" -> void (makeRegexM (unpack s) :: Parser Regex)
+                "color" -> return () -- not going to implement this
+                "style" -> return () -- not going to implement this
+                "phone" -> return ()
+                "uri" -> return ()
+                "email" -> return ()
+                "ip-address" -> return ()
+                "ipv6" -> return ()
+                "host-name" -> return ()
+                _ -> return () -- unknown format
+          maybeCheck checkFormat $ schemaFormat schema
         _ -> fail "not a string"
       "number" -> case val of
         Number n -> do
