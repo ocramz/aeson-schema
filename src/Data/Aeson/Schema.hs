@@ -20,7 +20,7 @@ import Data.Functor ((<$>))
 import Data.Ratio
 import Control.Applicative ((<*>))
 import Control.Arrow (second)
-import Control.Monad ((=<<), mapM, sequence_, msum, liftM)
+import Control.Monad ((=<<), mapM, forM_, sequence_, msum, liftM)
 import Data.Aeson (Value (..), (.:?), (.!=), FromJSON (..))
 import Data.Aeson.Types (Parser (..), emptyObject, emptyArray)
 import qualified Data.Aeson as A
@@ -248,7 +248,10 @@ validateP schema val = do
         Bool _ -> return ()
         _ -> fail "not a boolean"
       "object" -> case val of
-        Object o -> return ()
+        Object o -> do
+          forM_ (H.toList o) $ \(k, v) -> do
+            let maybeProperty = H.lookup k (schemaProperties schema)
+            maybeCheck (\propSchema -> validateP propSchema v) maybeProperty
         _ -> fail "not an object"
       "array" -> case val of
         Array a -> do

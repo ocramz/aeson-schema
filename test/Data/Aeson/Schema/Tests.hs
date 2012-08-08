@@ -10,6 +10,7 @@ import qualified Test.HUnit as HU
 
 import Data.Foldable (toList)
 import Data.Aeson
+import Data.Aeson.Types (emptyObject)
 import qualified Data.Aeson.Types
 import qualified Data.Attoparsec.Number
 import qualified Data.Vector
@@ -223,6 +224,20 @@ validationTests =
       assertValid schema [aesonQQ| { "eins": 1, "zwei": 2 } |]
       assertInvalid schema [aesonQQ| ["eins", "zwei"] |]
       assertInvalid schema [aesonQQ| null |]
+  , testCase "properties" $ do
+      let schema = [aesonQQ| {
+            "type": "object",
+            "properties": {
+              "aNumber": { "type": "number" },
+              "aString": { "type": "string" }
+            }
+          } |]
+      assertValid schema emptyObject
+      assertValid schema [aesonQQ| { "aNumber": 2 } |]
+      assertValid schema [aesonQQ| { "aString": "fromage" } |]
+      assertValid schema [aesonQQ| { "aNumber": 2, "aString": "fromage" } |]
+      assertInvalid schema [aesonQQ| { "aNumber": "deux" } |]
+      assertInvalid schema [aesonQQ| { "aString": 42 } |]
   ]
   where
     assertValid, assertInvalid :: Value -> Value -> HU.Assertion
