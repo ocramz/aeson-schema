@@ -15,6 +15,7 @@ import qualified Data.Aeson.Types
 import qualified Data.Attoparsec.Number
 import qualified Data.Vector
 import Data.Aeson.QQ
+import Data.Ratio ((%))
 import Data.Text (pack)
 import qualified Data.ByteString.Lazy as L
 import qualified Data.HashMap.Strict as H
@@ -238,6 +239,26 @@ validationTests =
       assertValid schema [aesonQQ| { "aNumber": 2, "aString": "fromage" } |]
       assertInvalid schema [aesonQQ| { "aNumber": "deux" } |]
       assertInvalid schema [aesonQQ| { "aString": 42 } |]
+  , testCase "patternProperties" $ do
+      let schema = [aesonQQ| {
+            "type": "object",
+            "properties": {
+              "positiveNumber": {
+                "type": "number",
+                "minimum": 0,
+                "exclusiveMinimum": true
+              }
+            },
+            "patternProperties": {
+              ".+Number$": { "type": "integer" },
+              ".+String$": { "type": "string" }
+            }
+          } |]
+      assertValid schema $ object [("positiveNumber", Number (fromInteger 13))]
+      assertInvalid schema $ object [("positiveNumber", Number (fromInteger (-13)))]
+      assertInvalid schema $ object [("positiveNumber", Number (fromRational (27 % 2)))]
+      assertValid schema [aesonQQ| { "fooString": "foo", "barString": "bar" } |]
+      assertInvalid schema [aesonQQ| { "fooString": null, "barString": "bar" } |]
   ]
   where
     assertValid, assertInvalid :: Value -> Value -> HU.Assertion

@@ -252,6 +252,8 @@ validateP schema val = do
           forM_ (H.toList o) $ \(k, v) -> do
             let maybeProperty = H.lookup k (schemaProperties schema)
             maybeCheck (\propSchema -> validateP propSchema v) maybeProperty
+            let patternProps = filter (flip match (unpack k) . patternCompiled . fst) $ schemaPatternProperties schema
+            forM_ patternProps $ flip validateP v . snd
         _ -> fail "not an object"
       "array" -> case val of
         Array a -> do
