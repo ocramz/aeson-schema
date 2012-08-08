@@ -309,7 +309,7 @@ validateP schema val = do
       "any" -> do
         msum $ map (validateType . Choice1of2) ["string", "number", "boolean", "object", "array", "null"]
       _ -> fail $ "unknown type " ++ unpack t
-    validateType _ = fail "not implemented"
+    validateType (Choice2of2 s) = validateP s val
 
     validateTypeDisallowed :: Choice2 Text (Schema String) -> Parser ()
     validateTypeDisallowed (Choice1of2 t) = case (t, val) of

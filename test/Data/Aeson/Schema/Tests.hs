@@ -370,6 +370,31 @@ validationTests =
           assertValid [aesonQQ| { "type": "string", "format": "regex" } |] "([abc])+\\s+$"
           assertInvalid [aesonQQ| { "type": "string", "format": "regex" } |] "^(abc]"
       ]
+  , testCase "type: subschema" $ do
+      let schema = [aesonQQ| {
+            "type": [
+              {
+                "type": "object",
+                "properties": { "insert": { "type": "string", "minLength": 1 } },
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": { "delete": { "type": "number", "minimum": 1 } },
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": { "retain": { "type": "number", "minimum": 1 } },
+                "additionalProperties": false
+              }
+            ]
+          } |]
+      assertValid schema [aesonQQ| { "insert": "lorem" } |]
+      assertInvalid schema [aesonQQ| { "insert": "lorem", "delete": 5 } |]
+      assertValid schema [aesonQQ| { "delete": 5 } |]
+      assertInvalid schema [aesonQQ| { "delete": 5, "retain": 76 } |]
+      assertValid schema [aesonQQ| { "retain": 76 } |]
   ]
   where
     assertValid, assertInvalid :: Value -> Value -> HU.Assertion
