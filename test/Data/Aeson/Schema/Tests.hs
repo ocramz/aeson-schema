@@ -96,7 +96,11 @@ validationTests =
       assertInvalid schemaMinimum3 [aesonQQ| 2 |]
       assertValid schemaMinimum3 [aesonQQ| 3 |]
       assertValid schemaMinimum3 [aesonQQ| 4 |]
-      let schemaExclusiveMinimum3 = [aesonQQ| { "type": "number", "minimum": 3, "exclusiveMinimum": true }]
+      let schemaExclusiveMinimum3 = [aesonQQ| {
+            "type": "number",
+            "minimum": 3,
+            "exclusiveMinimum": true
+          }]
       assertInvalid schemaExclusiveMinimum3 [aesonQQ| 2 |]
       assertInvalid schemaExclusiveMinimum3 [aesonQQ| 3 |]
       assertValid schemaExclusiveMinimum3 [aesonQQ| 4 |]
@@ -104,7 +108,11 @@ validationTests =
       assertValid schemaMaximum3 [aesonQQ| 2 |]
       assertValid schemaMaximum3 [aesonQQ| 3 |]
       assertInvalid schemaMaximum3 [aesonQQ| 4 |]
-      let schemaExclusiveMaximum3 = [aesonQQ| { "type": "number", "maximum": 3, "exclusiveMaximum": true }]
+      let schemaExclusiveMaximum3 = [aesonQQ| {
+            "type": "number",
+            "maximum": 3,
+            "exclusiveMaximum": true
+          }]
       assertValid schemaExclusiveMaximum3 [aesonQQ| 2 |]
       assertInvalid schemaExclusiveMaximum3 [aesonQQ| 3 |]
       assertInvalid schemaExclusiveMaximum3 [aesonQQ| 4 |]
@@ -190,7 +198,12 @@ validationTests =
       assertValid onlyStrings [aesonQQ| ["one", "two", "three"] |]
       assertInvalid onlyStrings [aesonQQ| ["one", "two", "three", 4] |]
       let stringNumberNull = [aesonQQ| {
-            "type": "array", "items": [ { "type": "string" }, { "type": "number" }, { "type": "null" } ]
+            "type": "array",
+            "items": [
+              { "type": "string" },
+              { "type": "number" },
+              { "type": "null" }
+            ]
           } |]
       assertValid stringNumberNull [aesonQQ| [] |]
       assertInvalid stringNumberNull [aesonQQ| [3] |]
@@ -202,17 +215,23 @@ validationTests =
       assertValid stringNumberNull [aesonQQ| ["lorem", 3, null, 1, 2, 3] |]
   , testCase "additionalItems" $ do
       let allowed = [aesonQQ| {
-            "type": "array", "items": [ { "type": "string" }, { "type": "number" } ], "additionalItems": true
+            "type": "array",
+            "items": [ { "type": "string" }, { "type": "number" } ],
+            "additionalItems": true
           } |]
       assertValid allowed [aesonQQ| ["abc", 123] |]
       assertValid allowed [aesonQQ| ["abc", 123, [], null, true] |]
       let forbidden = [aesonQQ| {
-            "type": "array", "items": [ { "type": "string" }, { "type": "number" } ], "additionalItems": false
+            "type": "array",
+            "items": [ { "type": "string" }, { "type": "number" } ],
+            "additionalItems": false
           } |]
       assertValid forbidden [aesonQQ| ["abc", 123] |]
       assertInvalid forbidden [aesonQQ| ["abc", 123, [], null, true] |]
       let onlyNulls = [aesonQQ| {
-            "type": "array", "items": [ { "type": "string" }, { "type": "number" } ], "additionalItems": { "type": "null" }
+            "type": "array",
+            "items": [ { "type": "string" }, { "type": "number" } ],
+            "additionalItems": { "type": "null" }
           } |]
       assertValid onlyNulls [aesonQQ| ["abc", 123] |]
       assertInvalid onlyNulls [aesonQQ| ["abc", 123, [], null, true] |]
@@ -268,7 +287,12 @@ validationTests =
             },
             "additionalProperties": { "type": "number" }
           } |]
-      assertValid additionalNumbers [aesonQQ| { "null": null, "emptyString": "", "oneMoreThing": 23, "theLastThing": 999 } |]
+      assertValid additionalNumbers [aesonQQ| {
+        "null": null,
+        "emptyString": "",
+        "oneMoreThing": 23,
+        "theLastThing": 999
+      } |]
       assertInvalid additionalNumbers [aesonQQ| { "null": null, "notANumber": true } |]
       let noAdditionalProperties = [aesonQQ| {
             "type": "object",
@@ -279,21 +303,34 @@ validationTests =
             "additionalProperties": false
           } |]
       assertValid noAdditionalProperties [aesonQQ| { "null": null, "emptyString": "" } |]
-      assertInvalid noAdditionalProperties [aesonQQ| { "null": null, "emptyString": "", "oneMoreThing": 23, "theLastThing": 999 } |]
+      assertInvalid noAdditionalProperties [aesonQQ| {
+        "null": null,
+        "emptyString": "",
+        "oneMoreThing": 23,
+        "theLastThing": 999
+      } |]
   , testCase "enum" $ do
       let testStrings = [aesonQQ| { "type": "string", "enum": ["foo", "bar", "blub"] } |]
       assertValid testStrings "foo"
       assertValid testStrings "bar"
       assertValid testStrings "blub"
       assertInvalid testStrings "lorem"
-      let oneTwoMapping = [aesonQQ| { "type": "object", "enum": [{ "eins": 1, "zwei": 2 }, { "un": 1, "deux": 2 }] } |]
+      let oneTwoMapping = [aesonQQ| {
+            "type": "object",
+            "enum": [{ "eins": 1, "zwei": 2 }, { "un": 1, "deux": 2 }]
+          } |]
       assertValid oneTwoMapping [aesonQQ| { "eins": 1, "zwei": 2 } |]
       assertInvalid oneTwoMapping emptyObject
       assertInvalid oneTwoMapping [aesonQQ| { "eins": 1, "zwei": 2, "drei": 3 } |]
       assertValid oneTwoMapping [aesonQQ| { "un": 1, "deux": 2 } |]
       assertInvalid oneTwoMapping [aesonQQ| { "one": 1, "two": 2 } |]
   , testCase "type: \"any\"" $ do
-      let schema = [aesonQQ| { "type": "any", "minimum": 2, "maxItems": 2, "pattern": "a$" } |]
+      let schema = [aesonQQ| {
+            "type": "any",
+            "minimum": 2,
+            "maxItems": 2,
+            "pattern": "a$"
+          } |]
       assertValid schema [aesonQQ| "a" |]
       assertInvalid schema [aesonQQ| "b" |]
       assertValid schema [aesonQQ| 3 |]
@@ -307,7 +344,14 @@ validationTests =
       let onlyFloats = [aesonQQ| { "type": "number", "disallow": "integer" } |]
       assertInvalid onlyFloats (Number $ fromInteger 3)
       assertValid onlyFloats (Number $ 9 + fromRational (3 % 4))
-      let notLengthThree = [aesonQQ| { "type": "array", "disallow": [{ "type": "array", "minItems": 3, "maxItems": 3 }] } |]
+      let notLengthThree = [aesonQQ| {
+            "type": "array",
+            "disallow": [{
+              "type": "array",
+              "minItems": 3,
+              "maxItems": 3
+            }]
+          } |]
       assertValid notLengthThree [aesonQQ| [] |]
       assertValid notLengthThree [aesonQQ| [1] |]
       assertValid notLengthThree [aesonQQ| [1, 2] |]
