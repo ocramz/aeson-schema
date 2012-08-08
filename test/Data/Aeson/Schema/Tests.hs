@@ -292,6 +292,16 @@ validationTests =
       assertInvalid oneTwoMapping [aesonQQ| { "eins": 1, "zwei": 2, "drei": 3 } |]
       assertValid oneTwoMapping [aesonQQ| { "un": 1, "deux": 2 } |]
       assertInvalid oneTwoMapping [aesonQQ| { "one": 1, "two": 2 } |]
+  , testCase "disallow" $ do
+      let onlyFloats = [aesonQQ| { "type": "number", "disallow": "integer" } |]
+      assertInvalid onlyFloats (Number $ fromInteger 3)
+      assertValid onlyFloats (Number $ 9 + fromRational (3 % 4))
+      let notLengthThree = [aesonQQ| { "type": "array", "disallow": [{ "type": "array", "minItems": 3, "maxItems": 3 }] } |]
+      assertValid notLengthThree [aesonQQ| [] |]
+      assertValid notLengthThree [aesonQQ| [1] |]
+      assertValid notLengthThree [aesonQQ| [1, 2] |]
+      assertInvalid notLengthThree [aesonQQ| [1, 2, 3] |]
+      assertValid notLengthThree [aesonQQ| [1, 2, 3, 4] |]
   ]
   where
     assertValid, assertInvalid :: Value -> Value -> HU.Assertion

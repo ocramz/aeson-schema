@@ -218,6 +218,7 @@ validateP schema val = do
   msum $ map validateType (schemaType schema)
   let checkEnum e = assert (val `elem` e) "value has to be one of the values in enum"
   maybeCheck checkEnum $ schemaEnum schema
+  forM_ (schemaDisallow schema) validateTypeDisallowed
   where
     validateType :: Choice2 Text (Schema String) -> Parser ()
     validateType (Choice1of2 t) = case t of
@@ -292,6 +293,19 @@ validateP schema val = do
       "any" -> fail "not implemented"
       _ -> fail $ "unknown type " ++ unpack t
     validateType _ = fail "not implemented"
+
+    validateTypeDisallowed :: Choice2 Text (Schema String) -> Parser ()
+    validateTypeDisallowed (Choice1of2 t) = case (t, val) of
+      ("string", String _) -> fail "strings are disallowed"
+      ("number", Number _) -> fail "numbers are disallowed"
+      ("integer", Number (I _)) -> fail "integers are disallowed"
+      ("boolean", Bool _) -> fail "booleans are disallowed"
+      ("object", Object _) -> fail "objects are disallowed"
+      ("array", Array _) -> fail "arrays are disallowed"
+      ("null", Null) -> fail "null is disallowed"
+      ("any", _) -> fail "Nothing is allowed here. Sorry."
+      _ -> return ()
+    validateTypeDisallowed (Choice2of2 s) = assert (not . isNothing $ validate s val) $ "value disallowed"
 
     isDivisibleBy :: Number -> Number -> Bool
     isDivisibleBy (I i) (I j) = i `mod` j == 0
