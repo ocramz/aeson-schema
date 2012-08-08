@@ -280,6 +280,18 @@ validationTests =
           } |]
       assertValid noAdditionalProperties [aesonQQ| { "null": null, "emptyString": "" } |]
       assertInvalid noAdditionalProperties [aesonQQ| { "null": null, "emptyString": "", "oneMoreThing": 23, "theLastThing": 999 } |]
+  , testCase "enum" $ do
+      let testStrings = [aesonQQ| { "type": "string", "enum": ["foo", "bar", "blub"] } |]
+      assertValid testStrings "foo"
+      assertValid testStrings "bar"
+      assertValid testStrings "blub"
+      assertInvalid testStrings "lorem"
+      let oneTwoMapping = [aesonQQ| { "type": "object", "enum": [{ "eins": 1, "zwei": 2 }, { "un": 1, "deux": 2 }] } |]
+      assertValid oneTwoMapping [aesonQQ| { "eins": 1, "zwei": 2 } |]
+      assertInvalid oneTwoMapping emptyObject
+      assertInvalid oneTwoMapping [aesonQQ| { "eins": 1, "zwei": 2, "drei": 3 } |]
+      assertValid oneTwoMapping [aesonQQ| { "un": 1, "deux": 2 } |]
+      assertInvalid oneTwoMapping [aesonQQ| { "one": 1, "two": 2 } |]
   ]
   where
     assertValid, assertInvalid :: Value -> Value -> HU.Assertion

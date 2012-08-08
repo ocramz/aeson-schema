@@ -216,6 +216,8 @@ validate schema val = case parse (validateP schema) val of
 validateP :: Schema String -> Value -> Parser ()
 validateP schema val = do
   msum $ map validateType (schemaType schema)
+  let checkEnum e = assert (val `elem` e) "value has to be one of the values in enum"
+  maybeCheck checkEnum $ schemaEnum schema
   where
     validateType :: Choice2 Text (Schema String) -> Parser ()
     validateType (Choice1of2 t) = case t of
