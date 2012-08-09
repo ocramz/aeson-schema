@@ -286,6 +286,10 @@ validateP schema val = do
                   Choice2of2 depSchema -> validateP depSchema val
             let maybeDependencies = H.lookup k (schemaDependencies schema)
             maybeCheck checkDependencies maybeDependencies
+          let requiredProps = map fst . filter (schemaRequired . snd) . H.toList $ schemaProperties schema
+          forM_ requiredProps $ \prop -> case H.lookup prop o of
+            Nothing -> fail $ "required property " ++ unpack prop ++ " is missing"
+            Just _ -> return ()
         _ -> fail "not an object"
       "array" -> case val of
         Array a -> do

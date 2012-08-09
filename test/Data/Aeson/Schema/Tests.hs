@@ -413,6 +413,15 @@ validationTests =
       assertValid aRequiresBToBeANumber [aesonQQ| { "a": "yes, we can" } |]
       assertInvalid aRequiresBToBeANumber [aesonQQ| { "a": "yes, we can", "b": "lorem" } |]
       assertValid aRequiresBToBeANumber [aesonQQ| { "a": "hi there", "b": 42 } |]
+  , testCase "required" $ do
+      let schema = [aesonQQ| {
+            "type": "object",
+            "properties": {
+              "a": { "required": true }
+            }
+          } |]
+      assertInvalid schema emptyObject
+      assertValid schema [aesonQQ| { "a": [1, 2, 3] } |]
   ]
   where
     assertValid, assertInvalid :: Value -> Value -> HU.Assertion
