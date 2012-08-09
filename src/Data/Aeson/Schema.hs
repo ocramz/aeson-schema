@@ -279,6 +279,13 @@ validateP schema val = do
                   Choice3of3 s -> validateP s v
             when (isNothing maybeProperty && L.null patternProps) $ do
               checkAdditionalProperties (schemaAdditionalProperties schema)
+            let checkDependencies deps = case deps of
+                  Choice1of2 props -> forM_ props $ \prop -> case H.lookup prop o of
+                    Nothing -> fail $ "property " ++ unpack k ++ " depends on property " ++ show prop
+                    Just _ -> return ()
+                  Choice2of2 depSchema -> validateP depSchema val
+            let maybeDependencies = H.lookup k (schemaDependencies schema)
+            maybeCheck checkDependencies maybeDependencies
         _ -> fail "not an object"
       "array" -> case val of
         Array a -> do
