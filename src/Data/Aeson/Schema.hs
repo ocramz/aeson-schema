@@ -213,14 +213,18 @@ validate schema val = case parse (validateP schema) val of
   A.Error e -> Just e
   A.Success _ -> Nothing
 
-validateP :: Schema String -> Value -> Parser ()
+type Validator err = Parser ()
+type ValidationError = String
+type SchemaValidator = Validator ValidationError
+
+validateP :: Schema String -> Value -> SchemaValidator
 validateP schema val = do
   msum $ map validateType (schemaType schema)
   let checkEnum e = assert (val `elem` e) "value has to be one of the values in enum"
   maybeCheck checkEnum $ schemaEnum schema
   forM_ (schemaDisallow schema) validateTypeDisallowed
   where
-    validateType :: Choice2 Text (Schema String) -> Parser ()
+    validateType :: Choice2 Text (Schema String) -> SchemaValidator
     validateType (Choice1of2 t) = case (t, val) of
       ("string", String str) -> validateString schema str
       ("number", Number num) -> validateNumber schema num
@@ -242,7 +246,7 @@ validateP schema val = do
     getType (Array _)  = "array"
     getType Null       = "null"
 
-    validateTypeDisallowed :: Choice2 Text (Schema String) -> Parser ()
+    validateTypeDisallowed :: Choice2 Text (Schema String) -> SchemaValidator
     validateTypeDisallowed (Choice1of2 t) = case (t, val) of
       ("string", String _) -> fail "strings are disallowed"
       ("number", Number _) -> fail "numbers are disallowed"
@@ -255,15 +259,15 @@ validateP schema val = do
       _ -> return ()
     validateTypeDisallowed (Choice2of2 s) = assert (not . isNothing $ validate s val) $ "value disallowed"
 
-assert :: Bool -> String -> Parser ()
+assert :: Bool -> String -> SchemaValidator
 assert True _ = return ()
 assert False e = fail e
 
-maybeCheck :: (a -> Parser ()) -> Maybe a -> Parser ()
+maybeCheck :: (a -> SchemaValidator) -> Maybe a -> SchemaValidator
 maybeCheck p (Just a) = p a
 maybeCheck _ _ = return ()
 
-validateString :: Schema String -> Text -> Parser ()
+validateString :: Schema String -> Text -> SchemaValidator
 validateString schema str = do
   let checkMinLength l = assert (length str >= l) $ "length of string must be at least " ++ show l
   checkMinLength $ schemaMinLength schema
@@ -288,7 +292,7 @@ validateString schema str = do
         _ -> return () -- unknown format
   maybeCheck checkFormat $ schemaFormat schema
 
-validateNumber :: Schema String -> Number -> Parser ()
+validateNumber :: Schema String -> Number -> SchemaValidator
 validateNumber schema num = do
   let checkMinimum m = if schemaExclusiveMinimum schema
                        then assert (num > m)  $ "number must be greater than " ++ show m
@@ -306,7 +310,7 @@ validateNumber schema num = do
     isDivisibleBy a b = a == fromInteger 0 || denominator (approxRational (a / b) epsilon) `elem` [-1,1]
       where epsilon = D $ 10 ** (-10)
 
-validateObject :: Schema String -> A.Object -> Parser ()
+validateObject :: Schema String -> A.Object -> SchemaValidator
 validateObject schema obj = do
   forM_ (H.toList obj) $ \(k, v) -> do
     let maybeProperty = H.lookup k (schemaProperties schema)
@@ -331,7 +335,7 @@ validateObject schema obj = do
     Nothing -> fail $ "required property " ++ unpack prop ++ " is missing"
     Just _ -> return ()
 
-validateArray :: Schema String -> A.Array -> Parser ()
+validateArray :: Schema String -> A.Array -> SchemaValidator
 validateArray schema arr = do
   let len = V.length arr
   let list = V.toList arr
