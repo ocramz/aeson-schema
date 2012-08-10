@@ -20,7 +20,7 @@ import Data.Functor ((<$>))
 import Data.Ratio
 import Control.Applicative ((<*>))
 import Control.Arrow (second)
-import Control.Monad ((=<<), mapM, forM_, sequence_, msum, liftM, when, void)
+import Control.Monad ((=<<), mapM, forM_, sequence_, msum, liftM, when, void, MonadPlus (..), msum)
 import Data.Aeson (Value (..), (.:?), (.!=), FromJSON (..))
 import Data.Aeson.Types (Parser (..), emptyObject, emptyArray)
 import qualified Data.Aeson as A
@@ -221,106 +221,26 @@ validateP schema val = do
   forM_ (schemaDisallow schema) validateTypeDisallowed
   where
     validateType :: Choice2 Text (Schema String) -> Parser ()
-    validateType (Choice1of2 t) = case t of
-      "string" -> case val of
-        String s -> do
-          let checkMinLength l = assert (length s >= l) $ "length of string must be at least " ++ show l
-          checkMinLength $ schemaMinLength schema
-          let checkMaxLength l = assert (length s <= l) $ "length of string must be at most " ++ show l
-          maybeCheck checkMaxLength (schemaMaxLength schema)
-          let checkPattern (Pattern source compiled) = assert (match compiled $ unpack s) $ "string must match pattern " ++ show source
-          maybeCheck checkPattern $ schemaPattern schema
-          let checkFormat format = case format of
-                "date-time" -> return ()
-                "data" -> return ()
-                "time" -> return ()
-                "utc-millisec" -> return ()
-                "regex" -> void (makeRegexM (unpack s) :: Parser Regex)
-                "color" -> return () -- not going to implement this
-                "style" -> return () -- not going to implement this
-                "phone" -> return ()
-                "uri" -> return ()
-                "email" -> return ()
-                "ip-address" -> return ()
-                "ipv6" -> return ()
-                "host-name" -> return ()
-                _ -> return () -- unknown format
-          maybeCheck checkFormat $ schemaFormat schema
-        _ -> fail "not a string"
-      "number" -> case val of
-        Number n -> do
-          let checkMinimum m = if schemaExclusiveMinimum schema
-                               then assert (n > m)  $ "number must be greater than " ++ show m
-                               else assert (n >= m) $ "number must be greater than or equal " ++ show m
-          maybeCheck checkMinimum $ schemaMinimum schema
-          let checkMaximum m = if schemaExclusiveMaximum schema
-                               then assert (n < m)  $ "number must be less than " ++ show m
-                               else assert (n <= m) $ "number must be less than or equal " ++ show m
-          maybeCheck checkMaximum $ schemaMaximum schema
-          let checkDivisibleBy devisor = assert (n `isDivisibleBy` devisor) $ "number must be devisible by " ++ show devisor
-          maybeCheck checkDivisibleBy $ schemaDivisibleBy schema
-        _ -> fail "not a number"
-      "integer" -> case val of
-        Number (I _) -> validateType (Choice1of2 "number")
-        _ -> fail "not an integer"
-      "boolean" -> case val of
-        Bool _ -> return ()
-        _ -> fail "not a boolean"
-      "object" -> case val of
-        Object o -> do
-          forM_ (H.toList o) $ \(k, v) -> do
-            let maybeProperty = H.lookup k (schemaProperties schema)
-            maybeCheck (\propSchema -> validateP propSchema v) maybeProperty
-            let patternProps = filter (flip match (unpack k) . patternCompiled . fst) $ schemaPatternProperties schema
-            forM_ patternProps $ flip validateP v . snd
-            let checkAdditionalProperties ap = case ap of
-                  Choice1of3 _ -> fail "not implemented"
-                  Choice2of3 b -> assert b $ "additional property " ++ unpack k ++ " is not allowed"
-                  Choice3of3 s -> validateP s v
-            when (isNothing maybeProperty && L.null patternProps) $ do
-              checkAdditionalProperties (schemaAdditionalProperties schema)
-            let checkDependencies deps = case deps of
-                  Choice1of2 props -> forM_ props $ \prop -> case H.lookup prop o of
-                    Nothing -> fail $ "property " ++ unpack k ++ " depends on property " ++ show prop
-                    Just _ -> return ()
-                  Choice2of2 depSchema -> validateP depSchema val
-            let maybeDependencies = H.lookup k (schemaDependencies schema)
-            maybeCheck checkDependencies maybeDependencies
-          let requiredProps = map fst . filter (schemaRequired . snd) . H.toList $ schemaProperties schema
-          forM_ requiredProps $ \prop -> case H.lookup prop o of
-            Nothing -> fail $ "required property " ++ unpack prop ++ " is missing"
-            Just _ -> return ()
-        _ -> fail "not an object"
-      "array" -> case val of
-        Array a -> do
-          let len = V.length a
-          let list = V.toList a
-          let checkMinItems m = assert (len >= m) $ "array must have at least " ++ show m ++ " items"
-          checkMinItems $ schemaMinItems schema
-          let checkMaxItems m = assert (len <= m) $ "array must have at most " ++ show m ++ " items"
-          maybeCheck checkMaxItems $ schemaMaxItems schema
-          let checkUnique = assert (L.length (L.nub list) == len) "all array items must be unique"
-          if schemaUniqueItems schema then checkUnique else return ()
-          let checkItems items = case items of
-                Choice1of3 _ -> fail "not implemented"
-                Choice2of3 s -> assert (V.all (isNothing . validate s) a) "all items in the array must validate against the schema given in 'items'"
-                Choice3of3 ss -> do
-                  sequence_ $ zipWith validateP ss list
-                  let additionalItems = drop (L.length ss) list
-                  let checkAdditionalItems ai = case ai of
-                        Choice1of3 _ -> fail "not implemented"
-                        Choice2of3 b -> assert (b || L.null additionalItems) $ "no additional items allowed"
-                        Choice3of3 additionalSchema -> sequence_ $ map (validateP additionalSchema) additionalItems
-                  checkAdditionalItems $ schemaAdditionalItems schema
-          maybeCheck checkItems $ schemaItems schema
-        _ -> fail "not an array"
-      "null" -> case val of
-        Null -> return ()
-        _ -> fail "not null"
-      "any" -> do
+    validateType (Choice1of2 t) = case (t, val) of
+      ("string", String str) -> validateString schema str
+      ("number", Number num) -> validateNumber schema num
+      ("integer", Number (I _)) -> validateType (Choice1of2 "number")
+      ("boolean", Bool _) -> return ()
+      ("object", Object obj) -> validateObject schema obj
+      ("array", Array arr) -> validateArray schema arr
+      ("null", Null) -> return ()
+      ("any", _) -> do
         msum $ map (validateType . Choice1of2) ["string", "number", "boolean", "object", "array", "null"]
-      _ -> fail $ "unknown type " ++ unpack t
+      (typ, _) -> fail $ "type mismatch: expected " ++ unpack typ ++ " but got " ++ getType val
     validateType (Choice2of2 s) = validateP s val
+
+    getType :: A.Value -> String
+    getType (String _) = "string"
+    getType (Number _) = "number"
+    getType (Bool _)   = "boolean"
+    getType (Object _) = "object"
+    getType (Array _)  = "array"
+    getType Null       = "null"
 
     validateTypeDisallowed :: Choice2 Text (Schema String) -> Parser ()
     validateTypeDisallowed (Choice1of2 t) = case (t, val) of
@@ -335,15 +255,101 @@ validateP schema val = do
       _ -> return ()
     validateTypeDisallowed (Choice2of2 s) = assert (not . isNothing $ validate s val) $ "value disallowed"
 
+assert :: Bool -> String -> Parser ()
+assert True _ = return ()
+assert False e = fail e
+
+maybeCheck :: (a -> Parser ()) -> Maybe a -> Parser ()
+maybeCheck p (Just a) = p a
+maybeCheck _ _ = return ()
+
+validateString :: Schema String -> Text -> Parser ()
+validateString schema str = do
+  let checkMinLength l = assert (length str >= l) $ "length of string must be at least " ++ show l
+  checkMinLength $ schemaMinLength schema
+  let checkMaxLength l = assert (length str <= l) $ "length of string must be at most " ++ show l
+  maybeCheck checkMaxLength (schemaMaxLength schema)
+  let checkPattern (Pattern source compiled) = assert (match compiled $ unpack str) $ "string must match pattern " ++ show source
+  maybeCheck checkPattern $ schemaPattern schema
+  let checkFormat format = case format of
+        "date-time" -> return ()
+        "data" -> return ()
+        "time" -> return ()
+        "utc-millisec" -> return ()
+        "regex" -> void (makeRegexM (unpack str) :: Parser Regex)
+        "color" -> return () -- not going to implement this
+        "style" -> return () -- not going to implement this
+        "phone" -> return ()
+        "uri" -> return ()
+        "email" -> return ()
+        "ip-address" -> return ()
+        "ipv6" -> return ()
+        "host-name" -> return ()
+        _ -> return () -- unknown format
+  maybeCheck checkFormat $ schemaFormat schema
+
+validateNumber :: Schema String -> Number -> Parser ()
+validateNumber schema num = do
+  let checkMinimum m = if schemaExclusiveMinimum schema
+                       then assert (num > m)  $ "number must be greater than " ++ show m
+                       else assert (num >= m) $ "number must be greater than or equal " ++ show m
+  maybeCheck checkMinimum $ schemaMinimum schema
+  let checkMaximum m = if schemaExclusiveMaximum schema
+                       then assert (num < m)  $ "number must be less than " ++ show m
+                       else assert (num <= m) $ "number must be less than or equal " ++ show m
+  maybeCheck checkMaximum $ schemaMaximum schema
+  let checkDivisibleBy devisor = assert (num `isDivisibleBy` devisor) $ "number must be devisible by " ++ show devisor
+  maybeCheck checkDivisibleBy $ schemaDivisibleBy schema
+  where
     isDivisibleBy :: Number -> Number -> Bool
     isDivisibleBy (I i) (I j) = i `mod` j == 0
     isDivisibleBy a b = a == fromInteger 0 || denominator (approxRational (a / b) epsilon) `elem` [-1,1]
       where epsilon = D $ 10 ** (-10)
 
-    assert :: Bool -> String -> Parser ()
-    assert True _ = return ()
-    assert False e = fail e
+validateObject :: Schema String -> A.Object -> Parser ()
+validateObject schema obj = do
+  forM_ (H.toList obj) $ \(k, v) -> do
+    let maybeProperty = H.lookup k (schemaProperties schema)
+    maybeCheck (\propSchema -> validateP propSchema v) maybeProperty
+    let patternProps = filter (flip match (unpack k) . patternCompiled . fst) $ schemaPatternProperties schema
+    forM_ patternProps $ flip validateP v . snd
+    let checkAdditionalProperties ap = case ap of
+          Choice1of3 _ -> fail "not implemented"
+          Choice2of3 b -> assert b $ "additional property " ++ unpack k ++ " is not allowed"
+          Choice3of3 s -> validateP s v
+    when (isNothing maybeProperty && L.null patternProps) $ do
+      checkAdditionalProperties (schemaAdditionalProperties schema)
+    let checkDependencies deps = case deps of
+          Choice1of2 props -> forM_ props $ \prop -> case H.lookup prop obj of
+            Nothing -> fail $ "property " ++ unpack k ++ " depends on property " ++ show prop
+            Just _ -> return ()
+          Choice2of2 depSchema -> validateP depSchema (A.Object obj)
+    let maybeDependencies = H.lookup k (schemaDependencies schema)
+    maybeCheck checkDependencies maybeDependencies
+  let requiredProps = map fst . filter (schemaRequired . snd) . H.toList $ schemaProperties schema
+  forM_ requiredProps $ \prop -> case H.lookup prop obj of
+    Nothing -> fail $ "required property " ++ unpack prop ++ " is missing"
+    Just _ -> return ()
 
-    maybeCheck :: (a -> Parser ()) -> Maybe a -> Parser ()
-    maybeCheck p (Just a) = p a
-    maybeCheck _ _ = return ()
+validateArray :: Schema String -> A.Array -> Parser ()
+validateArray schema arr = do
+  let len = V.length arr
+  let list = V.toList arr
+  let checkMinItems m = assert (len >= m) $ "array must have at least " ++ show m ++ " items"
+  checkMinItems $ schemaMinItems schema
+  let checkMaxItems m = assert (len <= m) $ "array must have at most " ++ show m ++ " items"
+  maybeCheck checkMaxItems $ schemaMaxItems schema
+  let checkUnique = assert (L.length (L.nub list) == len) "all array items must be unique"
+  if schemaUniqueItems schema then checkUnique else return ()
+  let checkItems items = case items of
+        Choice1of3 _ -> fail "not implemented"
+        Choice2of3 s -> assert (V.all (isNothing . validate s) arr) "all items in the array must validate against the schema given in 'items'"
+        Choice3of3 ss -> do
+          sequence_ $ zipWith validateP ss list
+          let additionalItems = drop (L.length ss) list
+          let checkAdditionalItems ai = case ai of
+                Choice1of3 _ -> fail "not implemented"
+                Choice2of3 b -> assert (b || L.null additionalItems) $ "no additional items allowed"
+                Choice3of3 additionalSchema -> sequence_ $ map (validateP additionalSchema) additionalItems
+          checkAdditionalItems $ schemaAdditionalItems schema
+  maybeCheck checkItems $ schemaItems schema
