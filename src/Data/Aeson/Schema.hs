@@ -1,4 +1,4 @@
-{-# LANGUAGE OverloadedStrings, FlexibleInstances, TupleSections #-}
+{-# LANGUAGE OverloadedStrings, FlexibleInstances, TupleSections, RankNTypes, TypeSynonymInstances #-}
 
 module Data.Aeson.Schema
   ( Schema (..)
@@ -208,35 +208,53 @@ parseSingleOrArray = singleOrArray parseJSON
 followReferences :: (Ord k, Functor f) => M.Map k (f k) -> M.Map k (f (Fix f))
 followReferences input = fix $ \output -> fmap (Fix . (M.!) output) <$> input
 
-validate :: Schema String -> Value -> Maybe String
-validate schema val = case parse (validateP schema) val of
-  A.Error e -> Just e
-  A.Success _ -> Nothing
-
-type Validator err = Parser ()
 type ValidationError = String
-type SchemaValidator = Validator ValidationError
+type SchemaValidator = forall v. Validator v => v ValidationError
 
-validateP :: Schema String -> Value -> SchemaValidator
-validateP schema val = do
-  msum $ map validateType (schemaType schema)
-  let checkEnum e = assert (val `elem` e) "value has to be one of the values in enum"
-  maybeCheck checkEnum $ schemaEnum schema
-  forM_ (schemaDisallow schema) validateTypeDisallowed
+class Validator v where
+  validationError :: a -> v a
+  valid :: v a
+  isValid :: v a -> Bool
+  allValid :: [v a] -> v a
+  anyValid :: a -> [v b] -> v a
+  anyValid err vs = if L.any isValid vs then valid else validationError err
+
+instance Validator [] where
+  validationError e = [e]
+  valid = []
+  isValid = L.null
+  allValid = L.concat
+
+instance Validator Maybe where
+  validationError = Just
+  valid = Nothing
+  isValid = isNothing
+  allValid = msum
+
+validate :: Schema String -> Value -> SchemaValidator
+validate schema val = allValid
+  [ anyValid "no type matched" $ map validateType (schemaType schema)
+  , maybeCheck checkEnum $ schemaEnum schema
+  , allValid $ map validateTypeDisallowed (schemaDisallow schema)
+  ]
   where
     validateType :: Choice2 Text (Schema String) -> SchemaValidator
     validateType (Choice1of2 t) = case (t, val) of
       ("string", String str) -> validateString schema str
       ("number", Number num) -> validateNumber schema num
       ("integer", Number (I _)) -> validateType (Choice1of2 "number")
-      ("boolean", Bool _) -> return ()
+      ("boolean", Bool _) -> valid
       ("object", Object obj) -> validateObject schema obj
       ("array", Array arr) -> validateArray schema arr
-      ("null", Null) -> return ()
-      ("any", _) -> do
-        msum $ map (validateType . Choice1of2) ["string", "number", "boolean", "object", "array", "null"]
-      (typ, _) -> fail $ "type mismatch: expected " ++ unpack typ ++ " but got " ++ getType val
-    validateType (Choice2of2 s) = validateP s val
+      ("null", Null) -> valid
+      ("any", _) -> case val of
+        String str -> validateString schema str
+        Number num -> validateNumber schema num
+        Object obj -> validateObject schema obj
+        Array arr  -> validateArray schema arr
+        _ -> valid
+      (typ, _) -> validationError $ "type mismatch: expected " ++ unpack typ ++ " but got " ++ getType val
+    validateType (Choice2of2 s) = validate s val
 
     getType :: A.Value -> String
     getType (String _) = "string"
@@ -246,114 +264,131 @@ validateP schema val = do
     getType (Array _)  = "array"
     getType Null       = "null"
 
+    checkEnum e = assert (val `elem` e) "value has to be one of the values in enum"
+
     validateTypeDisallowed :: Choice2 Text (Schema String) -> SchemaValidator
     validateTypeDisallowed (Choice1of2 t) = case (t, val) of
-      ("string", String _) -> fail "strings are disallowed"
-      ("number", Number _) -> fail "numbers are disallowed"
-      ("integer", Number (I _)) -> fail "integers are disallowed"
-      ("boolean", Bool _) -> fail "booleans are disallowed"
-      ("object", Object _) -> fail "objects are disallowed"
-      ("array", Array _) -> fail "arrays are disallowed"
-      ("null", Null) -> fail "null is disallowed"
-      ("any", _) -> fail "Nothing is allowed here. Sorry."
-      _ -> return ()
+      ("string", String _) -> validationError "strings are disallowed"
+      ("number", Number _) -> validationError "numbers are disallowed"
+      ("integer", Number (I _)) -> validationError "integers are disallowed"
+      ("boolean", Bool _) -> validationError "booleans are disallowed"
+      ("object", Object _) -> validationError "objects are disallowed"
+      ("array", Array _) -> validationError "arrays are disallowed"
+      ("null", Null) -> validationError "null is disallowed"
+      ("any", _) -> validationError "Nothing is allowed here. Sorry."
+      _ -> valid
     validateTypeDisallowed (Choice2of2 s) = assert (not . isNothing $ validate s val) $ "value disallowed"
 
 assert :: Bool -> String -> SchemaValidator
-assert True _ = return ()
-assert False e = fail e
+assert True _ = valid
+assert False e = validationError e
 
 maybeCheck :: (a -> SchemaValidator) -> Maybe a -> SchemaValidator
 maybeCheck p (Just a) = p a
-maybeCheck _ _ = return ()
+maybeCheck _ _ = valid
 
 validateString :: Schema String -> Text -> SchemaValidator
-validateString schema str = do
-  let checkMinLength l = assert (length str >= l) $ "length of string must be at least " ++ show l
-  checkMinLength $ schemaMinLength schema
-  let checkMaxLength l = assert (length str <= l) $ "length of string must be at most " ++ show l
-  maybeCheck checkMaxLength (schemaMaxLength schema)
-  let checkPattern (Pattern source compiled) = assert (match compiled $ unpack str) $ "string must match pattern " ++ show source
-  maybeCheck checkPattern $ schemaPattern schema
-  let checkFormat format = case format of
-        "date-time" -> return ()
-        "data" -> return ()
-        "time" -> return ()
-        "utc-millisec" -> return ()
-        "regex" -> void (makeRegexM (unpack str) :: Parser Regex)
-        "color" -> return () -- not going to implement this
-        "style" -> return () -- not going to implement this
-        "phone" -> return ()
-        "uri" -> return ()
-        "email" -> return ()
-        "ip-address" -> return ()
-        "ipv6" -> return ()
-        "host-name" -> return ()
-        _ -> return () -- unknown format
-  maybeCheck checkFormat $ schemaFormat schema
+validateString schema str = allValid
+  [ checkMinLength $ schemaMinLength schema
+  , maybeCheck checkMaxLength (schemaMaxLength schema)
+  , maybeCheck checkPattern $ schemaPattern schema
+  , maybeCheck checkFormat $ schemaFormat schema
+  ]
+  where
+    checkMinLength l = assert (length str >= l) $ "length of string must be at least " ++ show l
+    checkMaxLength l = assert (length str <= l) $ "length of string must be at most " ++ show l
+    checkPattern (Pattern source compiled) = assert (match compiled $ unpack str) $ "string must match pattern " ++ show source
+    checkFormat format = case format of
+      "date-time" -> valid
+      "data" -> valid
+      "time" -> valid
+      "utc-millisec" -> valid
+      "regex" -> case makeRegexM (unpack str) :: Maybe Regex of
+        Nothing -> validationError $ "not a valid regex: " ++ show str
+        Just _ -> valid
+      "color" -> valid -- not going to implement this
+      "style" -> valid -- not going to implement this
+      "phone" -> valid
+      "uri" -> valid
+      "email" -> valid
+      "ip-address" -> valid
+      "ipv6" -> valid
+      "host-name" -> valid
+      _ -> valid -- unknown format
 
 validateNumber :: Schema String -> Number -> SchemaValidator
-validateNumber schema num = do
-  let checkMinimum m = if schemaExclusiveMinimum schema
-                       then assert (num > m)  $ "number must be greater than " ++ show m
-                       else assert (num >= m) $ "number must be greater than or equal " ++ show m
-  maybeCheck checkMinimum $ schemaMinimum schema
-  let checkMaximum m = if schemaExclusiveMaximum schema
-                       then assert (num < m)  $ "number must be less than " ++ show m
-                       else assert (num <= m) $ "number must be less than or equal " ++ show m
-  maybeCheck checkMaximum $ schemaMaximum schema
-  let checkDivisibleBy devisor = assert (num `isDivisibleBy` devisor) $ "number must be devisible by " ++ show devisor
-  maybeCheck checkDivisibleBy $ schemaDivisibleBy schema
+validateNumber schema num = allValid
+  [ maybeCheck (checkMinimum $ schemaExclusiveMinimum schema) $ schemaMinimum schema
+  , maybeCheck (checkMaximum $ schemaExclusiveMaximum schema) $ schemaMaximum schema
+  , maybeCheck checkDivisibleBy $ schemaDivisibleBy schema
+  ]
   where
+    checkMinimum excl m = if excl
+      then assert (num > m)  $ "number must be greater than " ++ show m
+      else assert (num >= m) $ "number must be greater than or equal " ++ show m
+    checkMaximum excl m = if excl
+      then assert (num < m)  $ "number must be less than " ++ show m
+      else assert (num <= m) $ "number must be less than or equal " ++ show m
+    checkDivisibleBy devisor = assert (num `isDivisibleBy` devisor) $ "number must be devisible by " ++ show devisor
+
     isDivisibleBy :: Number -> Number -> Bool
     isDivisibleBy (I i) (I j) = i `mod` j == 0
     isDivisibleBy a b = a == fromInteger 0 || denominator (approxRational (a / b) epsilon) `elem` [-1,1]
       where epsilon = D $ 10 ** (-10)
 
 validateObject :: Schema String -> A.Object -> SchemaValidator
-validateObject schema obj = do
-  forM_ (H.toList obj) $ \(k, v) -> do
-    let maybeProperty = H.lookup k (schemaProperties schema)
-    maybeCheck (\propSchema -> validateP propSchema v) maybeProperty
-    let patternProps = filter (flip match (unpack k) . patternCompiled . fst) $ schemaPatternProperties schema
-    forM_ patternProps $ flip validateP v . snd
-    let checkAdditionalProperties ap = case ap of
-          Choice1of3 _ -> fail "not implemented"
+validateObject schema obj = allValid
+  [ allValid $ map (uncurry checkKeyValue) (H.toList obj)
+  , allValid $ map checkRequiredProperty requiredProperties
+  ]
+  where
+    checkKeyValue k v = allValid
+      [ maybeCheck (flip validate v) property
+      , allValid $ map (flip validate v . snd) matchingPatternsProperties
+      , if (isNothing property && L.null matchingPatternsProperties)
+        then checkAdditionalProperties (schemaAdditionalProperties schema)
+        else valid
+      , maybeCheck checkDependencies $ H.lookup k (schemaDependencies schema)
+      ]
+      where
+        property = H.lookup k (schemaProperties schema)
+        matchingPatternsProperties = filter (flip match (unpack k) . patternCompiled . fst) $ schemaPatternProperties schema
+        checkAdditionalProperties ap = case ap of
+          Choice1of3 _ -> validationError "not implemented"
           Choice2of3 b -> assert b $ "additional property " ++ unpack k ++ " is not allowed"
-          Choice3of3 s -> validateP s v
-    when (isNothing maybeProperty && L.null patternProps) $ do
-      checkAdditionalProperties (schemaAdditionalProperties schema)
-    let checkDependencies deps = case deps of
-          Choice1of2 props -> forM_ props $ \prop -> case H.lookup prop obj of
-            Nothing -> fail $ "property " ++ unpack k ++ " depends on property " ++ show prop
-            Just _ -> return ()
-          Choice2of2 depSchema -> validateP depSchema (A.Object obj)
-    let maybeDependencies = H.lookup k (schemaDependencies schema)
-    maybeCheck checkDependencies maybeDependencies
-  let requiredProps = map fst . filter (schemaRequired . snd) . H.toList $ schemaProperties schema
-  forM_ requiredProps $ \prop -> case H.lookup prop obj of
-    Nothing -> fail $ "required property " ++ unpack prop ++ " is missing"
-    Just _ -> return ()
+          Choice3of3 s -> validate s v
+        checkDependencies deps = case deps of
+          Choice1of2 props -> allValid $ flip map props $ \prop -> case H.lookup prop obj of
+            Nothing -> validationError $ "property " ++ unpack k ++ " depends on property " ++ show prop
+            Just _ -> valid
+          Choice2of2 depSchema -> validateObject depSchema obj
+    requiredProperties = map fst . filter (schemaRequired . snd) . H.toList $ schemaProperties schema
+    checkRequiredProperty key = case H.lookup key obj of
+      Nothing -> validationError $ "required property " ++ unpack key ++ " is missing"
+      Just _ -> valid
 
 validateArray :: Schema String -> A.Array -> SchemaValidator
-validateArray schema arr = do
-  let len = V.length arr
-  let list = V.toList arr
-  let checkMinItems m = assert (len >= m) $ "array must have at least " ++ show m ++ " items"
-  checkMinItems $ schemaMinItems schema
-  let checkMaxItems m = assert (len <= m) $ "array must have at most " ++ show m ++ " items"
-  maybeCheck checkMaxItems $ schemaMaxItems schema
-  let checkUnique = assert (L.length (L.nub list) == len) "all array items must be unique"
-  if schemaUniqueItems schema then checkUnique else return ()
-  let checkItems items = case items of
-        Choice1of3 _ -> fail "not implemented"
-        Choice2of3 s -> assert (V.all (isNothing . validate s) arr) "all items in the array must validate against the schema given in 'items'"
-        Choice3of3 ss -> do
-          sequence_ $ zipWith validateP ss list
-          let additionalItems = drop (L.length ss) list
-          let checkAdditionalItems ai = case ai of
-                Choice1of3 _ -> fail "not implemented"
-                Choice2of3 b -> assert (b || L.null additionalItems) $ "no additional items allowed"
-                Choice3of3 additionalSchema -> sequence_ $ map (validateP additionalSchema) additionalItems
-          checkAdditionalItems $ schemaAdditionalItems schema
-  maybeCheck checkItems $ schemaItems schema
+validateArray schema arr = allValid
+  [ checkMinItems $ schemaMinItems schema
+  , maybeCheck checkMaxItems $ schemaMaxItems schema
+  , if schemaUniqueItems schema then checkUnique else valid
+  , maybeCheck checkItems $ schemaItems schema
+  ]
+  where
+    len = V.length arr
+    list = V.toList arr
+    checkMinItems m = assert (len >= m) $ "array must have at least " ++ show m ++ " items"
+    checkMaxItems m = assert (len <= m) $ "array must have at most " ++ show m ++ " items"
+    checkUnique = assert (L.length (L.nub list) == len) "all array items must be unique"
+    checkItems items = case items of
+      Choice1of3 _ -> validationError "not implemented"
+      Choice2of3 s -> assert (V.all (isNothing . validate s) arr) "all items in the array must validate against the schema given in 'items'"
+      Choice3of3 ss ->
+        let additionalItems = drop (L.length ss) list
+            checkAdditionalItems ai = case ai of
+              Choice1of3 _ -> validationError "not implemented"
+              Choice2of3 b -> assert (b || L.null additionalItems) $ "no additional items allowed"
+              Choice3of3 additionalSchema -> allValid $ map (validate additionalSchema) additionalItems
+        in allValid [ allValid $ zipWith validate ss list
+                    , checkAdditionalItems $ schemaAdditionalItems schema
+                    ]
