@@ -30,7 +30,7 @@ assertInvalid sch inst = do
     Just e -> return ()
     Nothing -> HU.assertFailure "expected a validation error"
 
-parseSchema :: Value -> IO (Schema String)
+parseSchema :: Value -> IO (Schema V3 String)
 parseSchema v = case fromJSON v of
   Error e -> HU.assertFailure e >> fail "invalid schema"
   Success schema -> return schema

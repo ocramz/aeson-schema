@@ -1,7 +1,8 @@
-{-# LANGUAGE FlexibleInstances, TupleSections #-}
+{-# LANGUAGE FlexibleInstances, TupleSections, EmptyDataDecls #-}
 
 module Data.Aeson.Schema
   ( Schema (..)
+  , V3
   , Pattern (..)
   , mkPattern
   , empty
@@ -50,15 +51,15 @@ instance FromJSON Pattern where
 mkPattern :: (Monad m) => Text -> m Pattern
 mkPattern t = liftM (Pattern t) $ makeRegexM (unpack t)
 
-data Schema ref = Schema
-  { schemaType :: [Choice2 Text (Schema ref)]
-  , schemaProperties :: Map (Schema ref)
-  , schemaPatternProperties :: [(Pattern, Schema ref)]
-  , schemaAdditionalProperties :: Choice3 Text Bool (Schema ref)
-  , schemaItems :: Maybe (Choice3 Text (Schema ref) [Schema ref])
-  , schemaAdditionalItems :: Choice3 Text Bool (Schema ref)
+data Schema version ref = Schema
+  { schemaType :: [Choice2 Text (Schema version ref)]
+  , schemaProperties :: Map (Schema version ref)
+  , schemaPatternProperties :: [(Pattern, Schema version ref)]
+  , schemaAdditionalProperties :: Choice3 Text Bool (Schema version ref)
+  , schemaItems :: Maybe (Choice3 Text (Schema version ref) [Schema version ref])
+  , schemaAdditionalItems :: Choice3 Text Bool (Schema version ref)
   , schemaRequired :: Bool
-  , schemaDependencies :: Map (Choice2 [Text] (Schema ref))
+  , schemaDependencies :: Map (Choice2 [Text] (Schema version ref))
   , schemaMinimum :: Maybe Number
   , schemaMaximum :: Maybe Number
   , schemaExclusiveMinimum :: Bool
@@ -76,14 +77,16 @@ data Schema ref = Schema
   , schemaDescription :: Maybe Text
   , schemaFormat :: Maybe Text
   , schemaDivisibleBy :: Maybe Number
-  , schemaDisallow :: [Choice2 Text (Schema ref)]
-  , schemaExtends :: [Schema ref]
+  , schemaDisallow :: [Choice2 Text (Schema version ref)]
+  , schemaExtends :: [Schema version ref]
   , schemaId :: Maybe Text
   , schemaDRef :: Maybe ref -- ^ $ref
   , schemaDSchema :: Maybe Text -- ^ $schema
   } deriving (Eq, Show)
 
-instance Functor Schema where
+data V3
+
+instance Functor (Schema version) where
   fmap f s = s
     { schemaType = choice2 id (fmap f) <$> schemaType s
     , schemaProperties = fmap f <$> schemaProperties s
@@ -97,7 +100,7 @@ instance Functor Schema where
     , schemaDRef = f <$> schemaDRef s
     }
 
-instance Foldable Schema where
+instance Foldable (Schema version) where
   foldr f start s = ffoldr (ffoldr f) (choice2of2s $ schemaType s)
                   . ffoldr (ffoldr f) (schemaProperties s)
                   . ffoldr (ffoldr f) (map snd $ schemaPatternProperties s)
@@ -119,7 +122,7 @@ instance Foldable Schema where
       foldChoice3of3 g (Choice3of3 c) = g c
       foldChoice3of3 _ _ = id
 
-empty :: Schema ref
+empty :: Schema version ref
 empty = Schema
   { schemaType = []
   , schemaProperties = H.empty
@@ -155,7 +158,7 @@ empty = Schema
 
 newtype Fix a = Fix (a (Fix a))
 
-instance (FromJSON ref) => FromJSON (Schema ref) where
+instance (FromJSON ref) => FromJSON (Schema V3 ref) where
   parseJSON (Object o) =
     Schema <$> (parseSingleOrArray =<< parseFieldDefault "type" "any")
            <*> parseFieldDefault "properties" emptyObject

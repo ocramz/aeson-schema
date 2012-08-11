@@ -54,7 +54,7 @@ instance Validator Maybe where
   isValid = isNothing
   allValid = msum
 
-validate :: Schema String -> Value -> SchemaValidator
+validate :: Schema V3 String -> Value -> SchemaValidator
 validate schema val = allValid
   [ anyValid "no type matched" $ map validateType (schemaType schema)
   , maybeCheck checkEnum $ schemaEnum schema
@@ -62,7 +62,7 @@ validate schema val = allValid
   , allValid $ map (flip validate val) (schemaExtends schema)
   ]
   where
-    validateType :: Choice2 Text (Schema String) -> SchemaValidator
+    validateType :: Choice2 Text (Schema V3 String) -> SchemaValidator
     validateType (Choice1of2 t) = case (t, val) of
       ("string", String str) -> validateString schema str
       ("number", Number num) -> validateNumber schema num
@@ -90,7 +90,7 @@ validate schema val = allValid
 
     checkEnum e = assert (val `elem` e) "value has to be one of the values in enum"
 
-    validateTypeDisallowed :: Choice2 Text (Schema String) -> SchemaValidator
+    validateTypeDisallowed :: Choice2 Text (Schema V3 String) -> SchemaValidator
     validateTypeDisallowed (Choice1of2 t) = case (t, val) of
       ("string", String _) -> validationError "strings are disallowed"
       ("number", Number _) -> validationError "numbers are disallowed"
@@ -111,7 +111,7 @@ maybeCheck :: (a -> SchemaValidator) -> Maybe a -> SchemaValidator
 maybeCheck p (Just a) = p a
 maybeCheck _ _ = valid
 
-validateString :: Schema String -> Text -> SchemaValidator
+validateString :: Schema V3 String -> Text -> SchemaValidator
 validateString schema str = allValid
   [ checkMinLength $ schemaMinLength schema
   , maybeCheck checkMaxLength (schemaMaxLength schema)
@@ -140,7 +140,7 @@ validateString schema str = allValid
       "host-name" -> valid
       _ -> valid -- unknown format
 
-validateNumber :: Schema String -> Number -> SchemaValidator
+validateNumber :: Schema V3 String -> Number -> SchemaValidator
 validateNumber schema num = allValid
   [ maybeCheck (checkMinimum $ schemaExclusiveMinimum schema) $ schemaMinimum schema
   , maybeCheck (checkMaximum $ schemaExclusiveMaximum schema) $ schemaMaximum schema
@@ -160,7 +160,7 @@ validateNumber schema num = allValid
     isDivisibleBy a b = a == fromInteger 0 || denominator (approxRational (a / b) epsilon) `elem` [-1,1]
       where epsilon = D $ 10 ** (-10)
 
-validateObject :: Schema String -> A.Object -> SchemaValidator
+validateObject :: Schema V3 String -> A.Object -> SchemaValidator
 validateObject schema obj = allValid
   [ allValid $ map (uncurry checkKeyValue) (H.toList obj)
   , allValid $ map checkRequiredProperty requiredProperties
@@ -191,7 +191,7 @@ validateObject schema obj = allValid
       Nothing -> validationError $ "required property " ++ unpack key ++ " is missing"
       Just _ -> valid
 
-validateArray :: Schema String -> A.Array -> SchemaValidator
+validateArray :: Schema V3 String -> A.Array -> SchemaValidator
 validateArray schema arr = allValid
   [ checkMinItems $ schemaMinItems schema
   , maybeCheck checkMaxItems $ schemaMaxItems schema
