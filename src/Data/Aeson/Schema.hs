@@ -11,26 +11,21 @@ module Data.Aeson.Schema
   ) where
 
 import Prelude hiding (foldr, length)
-import Data.Maybe (fromMaybe, maybe, isNothing)
 import Data.Foldable (Foldable (..), toList)
 import Data.Traversable (traverse)
-import qualified Data.List as L
 import Data.Function (fix, on)
 import Data.Functor ((<$>))
-import Data.Ratio
 import Control.Applicative ((<*>))
 import Control.Arrow (second)
-import Control.Monad ((=<<), mapM, forM_, sequence_, msum, liftM, when, void, MonadPlus (..), msum)
+import Control.Monad (liftM)
 import Data.Aeson (Value (..), (.:?), (.!=), FromJSON (..))
-import Data.Aeson.Types (Parser (..), emptyObject, emptyArray)
-import qualified Data.Aeson as A
-import Data.Aeson.Types (parse)
+import Data.Aeson.Types (Parser, emptyObject, emptyArray)
 import qualified Data.Vector as V
 import qualified Data.HashMap.Strict as H
 import qualified Data.Map as M
-import Data.Text (Text (..), unpack, length)
+import Data.Text (Text, unpack)
 import Data.Attoparsec.Number (Number (..))
-import Text.Regex.PCRE (makeRegexM, match)
+import Text.Regex.PCRE (makeRegexM)
 import Text.Regex.PCRE.String (Regex)
 
 import Data.Aeson.Schema.Choice
@@ -47,6 +42,7 @@ instance Show Pattern where
 
 instance FromJSON Pattern where
   parseJSON (String s) = mkPattern s
+  parseJSON _ = fail "only strings can be parsed as patterns"
 
 mkPattern :: (Monad m) => Text -> m Pattern
 mkPattern t = liftM (Pattern t) $ makeRegexM (unpack t)
@@ -197,7 +193,7 @@ instance (FromJSON ref) => FromJSON (Schema V3 ref) where
         parseFieldDefault name value = parseJSON =<< parseField name .!= value
 
         parseDependency (String s) = return $ Choice1of2 [s]
-        parseDependency o = parseJSON o
+        parseDependency val = parseJSON val
   parseJSON _ = fail "a schema must be a JSON object"
 
 singleOrArray :: (Value -> Parser a) -> Value -> Parser [a]

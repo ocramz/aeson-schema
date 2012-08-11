@@ -1,6 +1,4 @@
 import Test.Framework
-import qualified Test.HUnit as HU
-import Test.Framework.Providers.HUnit
 
 import qualified Data.Aeson.Schema.Tests
 import qualified Data.Aeson.Schema.Validator.Tests

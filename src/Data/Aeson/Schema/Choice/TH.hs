@@ -4,7 +4,7 @@ module Data.Aeson.Schema.Choice.TH
   ( generateChoice
   ) where
 
-import Control.Monad (mapM, forM)
+import Control.Monad (forM)
 import Language.Haskell.TH
 import Data.Aeson (ToJSON (..), FromJSON (..))
 import Control.Applicative (Alternative (..))

@@ -8,15 +8,9 @@ import qualified Test.HUnit as HU
 
 import Data.Foldable (toList)
 import Data.Aeson
-import Data.Aeson.Types (emptyObject)
-import qualified Data.Aeson.Types
-import qualified Data.Attoparsec.Number
-import qualified Data.Vector
-import Data.Aeson.QQ
-import Data.Text (pack)
+import Data.Text ()
 import qualified Data.ByteString.Lazy as L
 import qualified Data.HashMap.Strict as H
-import Data.Maybe (fromJust)
 import qualified Data.Map as M
 
 import Data.Aeson.Schema

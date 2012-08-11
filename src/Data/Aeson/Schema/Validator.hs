@@ -6,24 +6,15 @@ module Data.Aeson.Schema.Validator
   ) where
 
 import Prelude hiding (foldr, length)
-import Data.Maybe (fromMaybe, maybe, isNothing)
-import Data.Foldable (Foldable (..), toList)
-import Data.Traversable (traverse)
+import Data.Maybe (isNothing)
 import qualified Data.List as L
-import Data.Function (fix, on)
-import Data.Functor ((<$>))
 import Data.Ratio
-import Control.Applicative ((<*>))
-import Control.Arrow (second)
-import Control.Monad ((=<<), mapM, forM_, sequence_, msum, liftM, when, void, MonadPlus (..), msum)
-import Data.Aeson (Value (..), (.:?), (.!=), FromJSON (..))
-import Data.Aeson.Types (Parser (..), emptyObject, emptyArray)
+import Control.Monad (msum)
+import Data.Aeson (Value (..))
 import qualified Data.Aeson as A
-import Data.Aeson.Types (parse)
 import qualified Data.Vector as V
 import qualified Data.HashMap.Strict as H
-import qualified Data.Map as M
-import Data.Text (Text (..), unpack, length)
+import Data.Text (Text, unpack, length)
 import Data.Attoparsec.Number (Number (..))
 import Text.Regex.PCRE (makeRegexM, match)
 import Text.Regex.PCRE.String (Regex)
