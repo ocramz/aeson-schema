@@ -236,6 +236,7 @@ validate schema val = allValid
   [ anyValid "no type matched" $ map validateType (schemaType schema)
   , maybeCheck checkEnum $ schemaEnum schema
   , allValid $ map validateTypeDisallowed (schemaDisallow schema)
+  , allValid $ map (flip validate val) (schemaExtends schema)
   ]
   where
     validateType :: Choice2 Text (Schema String) -> SchemaValidator

@@ -422,6 +422,31 @@ validationTests =
           } |]
       assertInvalid schema emptyObject
       assertValid schema [aesonQQ| { "a": [1, 2, 3] } |]
+  , testCase "extends" $ do
+      let schema = [aesonQQ| {
+            "type": "object",
+            "properties": {
+              "a": { "type": "number" }
+            },
+            "extends": [
+              {
+                "properties": {
+                  "a": { "required": true }
+                }
+              },
+              {
+                "patternProperties": {
+                  "^[a-z]$": { "minimum": -3 }
+                }
+              }
+            ]
+          } |]
+      assertValid schema [aesonQQ| { "a": 2 } |]
+      assertInvalid schema emptyObject
+      assertInvalid schema [aesonQQ| { "a": -4 } |]
+      assertInvalid schema [aesonQQ| { "a": "foo" } |]
+      assertInvalid schema [aesonQQ| { "a": -1, "b": -10 } |]
+      assertValid schema [aesonQQ| { "a": -1, "ba": -10 } |]
   ]
   where
     assertValid, assertInvalid :: Value -> Value -> HU.Assertion
