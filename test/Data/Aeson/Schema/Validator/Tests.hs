@@ -14,31 +14,29 @@ import qualified Data.Aeson.Types
 import qualified Data.Attoparsec.Number
 import qualified Data.Vector
 import qualified Data.Text
+import qualified Data.Map as M
 
 import Data.Aeson.Schema
 import Data.Aeson.Schema.Validator
+import Data.Aeson.Schema.Choice
 
-assertValid, assertInvalid :: Value -> Value -> HU.Assertion
-assertValid sch inst = do
-  schema <- parseSchema sch
-  case validate schema inst of
-    Just e -> HU.assertFailure e
-    Nothing -> return ()
-assertInvalid sch inst = do
-  schema <- parseSchema sch
-  case validate schema inst of
-    Just _ -> return ()
-    Nothing -> HU.assertFailure "expected a validation error"
+assertValid, assertInvalid :: Schema V3 (Fix (Schema V3)) -> Value -> HU.Assertion
+assertValid sch inst = case validate sch inst of
+  Just e -> HU.assertFailure e
+  Nothing -> return ()
+assertInvalid sch inst = case validate sch inst of
+  Just _ -> return ()
+  Nothing -> HU.assertFailure "expected a validation error"
 
-parseSchema :: Value -> IO (Schema V3 String)
-parseSchema v = case fromJSON v of
+parseSchema :: Value -> IO (Schema V3 (Fix (Schema V3)))
+parseSchema v = case fromJSON v :: Result (Schema V3 String) of
   Error e -> HU.assertFailure e >> fail "invalid schema"
-  Success schema -> return schema
+  Success schema -> return $ fmap (error "schema mustn't contain a $ref") schema
 
 tests :: [Test]
 tests =
   [ testCase "type: \"number\"" $ do
-      let schema = [aesonQQ| { "type": "number" } |]
+      schema <- parseSchema [aesonQQ| { "type": "number" } |]
       assertValid schema [aesonQQ| 3 |]
       assertValid schema [aesonQQ| 3.5 |]
       assertInvalid schema [aesonQQ| true |]
@@ -47,7 +45,7 @@ tests =
       assertInvalid schema [aesonQQ| ["eins", "zwei"] |]
       assertInvalid schema [aesonQQ| null |]
   , testCase "type: \"integer\"" $ do
-      let schema = [aesonQQ| { "type": "integer" } |]
+      schema <- parseSchema [aesonQQ| { "type": "integer" } |]
       -- unfortunately, we can't use aesonQQ to test integer validation
       -- because aesonQQ makes no distinction between integers and floating-point
       -- numbers
@@ -59,44 +57,44 @@ tests =
       assertInvalid schema [aesonQQ| ["eins", "zwei"] |]
       assertInvalid schema [aesonQQ| null |]
   , testCase "maximum and minimum" $ do
-      let schemaMinimum3 = [aesonQQ| { "type": "number", "minimum": 3 } |]
+      schemaMinimum3 <- parseSchema [aesonQQ| { "type": "number", "minimum": 3 } |]
       assertInvalid schemaMinimum3 [aesonQQ| 2 |]
       assertValid schemaMinimum3 [aesonQQ| 3 |]
       assertValid schemaMinimum3 [aesonQQ| 4 |]
-      let schemaExclusiveMinimum3 = [aesonQQ| {
-            "type": "number",
-            "minimum": 3,
-            "exclusiveMinimum": true
-          }]
+      schemaExclusiveMinimum3 <- parseSchema [aesonQQ| {
+        "type": "number",
+        "minimum": 3,
+        "exclusiveMinimum": true
+      }]
       assertInvalid schemaExclusiveMinimum3 [aesonQQ| 2 |]
       assertInvalid schemaExclusiveMinimum3 [aesonQQ| 3 |]
       assertValid schemaExclusiveMinimum3 [aesonQQ| 4 |]
-      let schemaMaximum3 = [aesonQQ| { "type": "number", "maximum": 3 } |]
+      schemaMaximum3 <- parseSchema [aesonQQ| { "type": "number", "maximum": 3 } |]
       assertValid schemaMaximum3 [aesonQQ| 2 |]
       assertValid schemaMaximum3 [aesonQQ| 3 |]
       assertInvalid schemaMaximum3 [aesonQQ| 4 |]
-      let schemaExclusiveMaximum3 = [aesonQQ| {
-            "type": "number",
-            "maximum": 3,
-            "exclusiveMaximum": true
-          }]
+      schemaExclusiveMaximum3 <- parseSchema [aesonQQ| {
+        "type": "number",
+        "maximum": 3,
+        "exclusiveMaximum": true
+      }]
       assertValid schemaExclusiveMaximum3 [aesonQQ| 2 |]
       assertInvalid schemaExclusiveMaximum3 [aesonQQ| 3 |]
       assertInvalid schemaExclusiveMaximum3 [aesonQQ| 4 |]
   , testCase "divisibleBy" $ do
-      let by2 = [aesonQQ| { "type": "number", "divisibleBy": 2 } |]
+      by2 <- parseSchema [aesonQQ| { "type": "number", "divisibleBy": 2 } |]
       assertValid by2 [aesonQQ| 2 |]
       assertValid by2 [aesonQQ| 4 |]
       assertValid by2 [aesonQQ| 0 |]
       assertInvalid by2 [aesonQQ| 1 |]
       assertInvalid by2 [aesonQQ| 3 |]
-      let byOneAndHalf = [aesonQQ| { "type": "number", "divisibleBy": 1.5 }]
+      byOneAndHalf <- parseSchema [aesonQQ| { "type": "number", "divisibleBy": 1.5 }]
       assertValid byOneAndHalf [aesonQQ| 1.5 |]
       assertValid byOneAndHalf [aesonQQ| 3 |]
       assertValid byOneAndHalf [aesonQQ| 4.5 |]
       assertInvalid byOneAndHalf [aesonQQ| 2.5 |]
   , testCase "type: \"string\"" $ do
-      let schema = [aesonQQ| { "type": "string" }]
+      schema <- parseSchema [aesonQQ| { "type": "string" }]
       assertInvalid schema [aesonQQ| 3 |]
       assertInvalid schema [aesonQQ| true |]
       assertValid schema [aesonQQ| "nobody expects the ..." |]
@@ -104,21 +102,23 @@ tests =
       assertInvalid schema [aesonQQ| ["eins", "zwei"] |]
       assertInvalid schema [aesonQQ| null |]
   , testCase "minLength and maxLength" $ do
-      let minLength2 = [aesonQQ| { "type": "string", "minLength": 2 } |]
+      minLength2 <- parseSchema [aesonQQ| { "type": "string", "minLength": 2 } |]
       assertInvalid minLength2 [aesonQQ| "" |]
       assertInvalid minLength2 [aesonQQ| "a" |]
       assertValid minLength2 [aesonQQ| "aa" |]
-      let maxLength5 = [aesonQQ| { "type": "string", "maxLength": 5 } |]
+      maxLength5 <- parseSchema [aesonQQ| { "type": "string", "maxLength": 5 } |]
       assertValid maxLength5 [aesonQQ| "" |]
       assertValid maxLength5 [aesonQQ| "lorem" |]
       assertInvalid maxLength5 [aesonQQ| "lorem ipsum" |]
   , testCase "pattern" $ do
-      assertInvalid [aesonQQ| { "type": "string", "pattern": ".+" } |] ""
-      assertValid [aesonQQ| { "type": "string", "pattern": ".+" } |] "one does not simply ..."
-      assertValid [aesonQQ| { "type": "string", "pattern": "^([a-z][0-9])+$" } |] "h8w2o8e3"
-      assertInvalid [aesonQQ| { "type": "string", "pattern": "^([a-z][0-9])+$" } |] "h8w2o8e35"
+      notEmptyString <- parseSchema [aesonQQ| { "type": "string", "pattern": ".+" } |]
+      assertInvalid notEmptyString ""
+      assertValid notEmptyString "one does not simply ..."
+      letterDigitAlternating <- parseSchema [aesonQQ| { "type": "string", "pattern": "^([a-z][0-9])+$" } |]
+      assertValid letterDigitAlternating "h8w2o8e3"
+      assertInvalid letterDigitAlternating "h8w2o8e35"
   , testCase "type: \"boolean\"" $ do
-      let schema = [aesonQQ| { "type": "boolean" }]
+      schema <- parseSchema [aesonQQ| { "type": "boolean" }]
       assertInvalid schema [aesonQQ| 3 |]
       assertValid schema [aesonQQ| true |]
       assertInvalid schema [aesonQQ| "nobody expects the ..." |]
@@ -126,7 +126,7 @@ tests =
       assertInvalid schema [aesonQQ| ["eins", "zwei"] |]
       assertInvalid schema [aesonQQ| null |]
   , testCase "type: \"null\"" $ do
-      let schema = [aesonQQ| { "type": "null" }]
+      schema <- parseSchema [aesonQQ| { "type": "null" }]
       assertInvalid schema [aesonQQ| 3 |]
       assertInvalid schema [aesonQQ| true |]
       assertInvalid schema [aesonQQ| "nobody expects the ..." |]
@@ -134,7 +134,7 @@ tests =
       assertInvalid schema [aesonQQ| ["eins", "zwei"] |]
       assertValid schema [aesonQQ| null |]
   , testCase "type: \"array\"" $ do
-      let schema = [aesonQQ| { "type": "array" }]
+      schema <- parseSchema [aesonQQ| { "type": "array" }]
       assertInvalid schema [aesonQQ| 3 |]
       assertInvalid schema [aesonQQ| true |]
       assertInvalid schema [aesonQQ| "nobody expects the ..." |]
@@ -142,36 +142,36 @@ tests =
       assertValid schema [aesonQQ| ["eins", "zwei"] |]
       assertInvalid schema [aesonQQ| null |]
   , testCase "minItems and maxItems" $ do
-      let min3 = [aesonQQ| { "type": "array", "minItems": 3 } |]
+      min3 <- parseSchema [aesonQQ| { "type": "array", "minItems": 3 } |]
       assertInvalid min3 [aesonQQ| [] |]
       assertInvalid min3 [aesonQQ| [1, true] |]
       assertValid min3 [aesonQQ| [1, true, null] |]
-      let max3 = [aesonQQ| { "type": "array", "maxItems": 3 } |]
+      max3 <- parseSchema [aesonQQ| { "type": "array", "maxItems": 3 } |]
       assertValid max3 [aesonQQ| [] |]
       assertValid max3 [aesonQQ| [1, true, null] |]
       assertInvalid max3 [aesonQQ| [1, true, null, "lorem"] |]
   , testCase "uniqueItems" $ do
-      let schema = [aesonQQ| { "type": "array", "uniqueItems": true } |]
+      schema <- parseSchema [aesonQQ| { "type": "array", "uniqueItems": true } |]
       assertValid schema [aesonQQ| [] |]
       assertValid schema [aesonQQ| [1, 2] |]
       assertInvalid schema [aesonQQ| [1, 2, 1] |]
       assertValid schema [aesonQQ| [{ "lorem": "ipsum" }, 2, { "ipsum": "lorem" }] |]
       assertInvalid schema [aesonQQ| [{ "lorem": "ipsum" }, 2, { "lorem": "ipsum" }] |]
   , testCase "items" $ do
-      let onlyNumbers = [aesonQQ| { "type": "array", "items": { "type": "number" } } |]
+      onlyNumbers <- parseSchema [aesonQQ| { "type": "array", "items": { "type": "number" } } |]
       assertValid onlyNumbers [aesonQQ| [1, 2, 3] |]
       assertInvalid onlyNumbers [aesonQQ| [1, 2, 3, "four"] |]
-      let onlyStrings = [aesonQQ| { "type": "array", "items": { "type": "string" } } |]
+      onlyStrings <- parseSchema [aesonQQ| { "type": "array", "items": { "type": "string" } } |]
       assertValid onlyStrings [aesonQQ| ["one", "two", "three"] |]
       assertInvalid onlyStrings [aesonQQ| ["one", "two", "three", 4] |]
-      let stringNumberNull = [aesonQQ| {
-            "type": "array",
-            "items": [
-              { "type": "string" },
-              { "type": "number" },
-              { "type": "null" }
-            ]
-          } |]
+      stringNumberNull <- parseSchema [aesonQQ| {
+        "type": "array",
+        "items": [
+          { "type": "string" },
+          { "type": "number" },
+          { "type": "null" }
+        ]
+      } |]
       assertValid stringNumberNull [aesonQQ| [] |]
       assertInvalid stringNumberNull [aesonQQ| [3] |]
       assertValid stringNumberNull [aesonQQ| ["lorem"] |]
@@ -181,30 +181,30 @@ tests =
       assertInvalid stringNumberNull [aesonQQ| ["lorem", 3, 4] |]
       assertValid stringNumberNull [aesonQQ| ["lorem", 3, null, 1, 2, 3] |]
   , testCase "additionalItems" $ do
-      let allowed = [aesonQQ| {
-            "type": "array",
-            "items": [ { "type": "string" }, { "type": "number" } ],
-            "additionalItems": true
-          } |]
+      allowed <- parseSchema [aesonQQ| {
+        "type": "array",
+        "items": [ { "type": "string" }, { "type": "number" } ],
+        "additionalItems": true
+      } |]
       assertValid allowed [aesonQQ| ["abc", 123] |]
       assertValid allowed [aesonQQ| ["abc", 123, [], null, true] |]
-      let forbidden = [aesonQQ| {
-            "type": "array",
-            "items": [ { "type": "string" }, { "type": "number" } ],
-            "additionalItems": false
-          } |]
+      forbidden <- parseSchema [aesonQQ| {
+        "type": "array",
+        "items": [ { "type": "string" }, { "type": "number" } ],
+        "additionalItems": false
+      } |]
       assertValid forbidden [aesonQQ| ["abc", 123] |]
       assertInvalid forbidden [aesonQQ| ["abc", 123, [], null, true] |]
-      let onlyNulls = [aesonQQ| {
-            "type": "array",
-            "items": [ { "type": "string" }, { "type": "number" } ],
-            "additionalItems": { "type": "null" }
-          } |]
+      onlyNulls <- parseSchema [aesonQQ| {
+        "type": "array",
+        "items": [ { "type": "string" }, { "type": "number" } ],
+        "additionalItems": { "type": "null" }
+      } |]
       assertValid onlyNulls [aesonQQ| ["abc", 123] |]
       assertInvalid onlyNulls [aesonQQ| ["abc", 123, [], null, true] |]
       assertValid onlyNulls [aesonQQ| ["abc", 123, null, null, null, null] |]
   , testCase "type: \"object\"" $ do
-      let schema = [aesonQQ| { "type": "object" }]
+      schema <- parseSchema [aesonQQ| { "type": "object" }]
       assertInvalid schema [aesonQQ| 3 |]
       assertInvalid schema [aesonQQ| true |]
       assertInvalid schema [aesonQQ| "nobody expects the ..." |]
@@ -212,13 +212,13 @@ tests =
       assertInvalid schema [aesonQQ| ["eins", "zwei"] |]
       assertInvalid schema [aesonQQ| null |]
   , testCase "properties" $ do
-      let schema = [aesonQQ| {
-            "type": "object",
-            "properties": {
-              "aNumber": { "type": "number" },
-              "aString": { "type": "string" }
-            }
-          } |]
+      schema <- parseSchema [aesonQQ| {
+        "type": "object",
+        "properties": {
+          "aNumber": { "type": "number" },
+          "aString": { "type": "string" }
+        }
+      } |]
       assertValid schema emptyObject
       assertValid schema [aesonQQ| { "aNumber": 2 } |]
       assertValid schema [aesonQQ| { "aString": "fromage" } |]
@@ -226,34 +226,34 @@ tests =
       assertInvalid schema [aesonQQ| { "aNumber": "deux" } |]
       assertInvalid schema [aesonQQ| { "aString": 42 } |]
   , testCase "patternProperties" $ do
-      let schema = [aesonQQ| {
-            "type": "object",
-            "properties": {
-              "positiveNumber": {
-                "type": "number",
-                "minimum": 0,
-                "exclusiveMinimum": true
-              }
-            },
-            "patternProperties": {
-              ".+Number$": { "type": "integer" },
-              ".+String$": { "type": "string" }
-            }
-          } |]
+      schema <- parseSchema [aesonQQ| {
+        "type": "object",
+        "properties": {
+          "positiveNumber": {
+            "type": "number",
+            "minimum": 0,
+            "exclusiveMinimum": true
+          }
+        },
+        "patternProperties": {
+          ".+Number$": { "type": "integer" },
+          ".+String$": { "type": "string" }
+        }
+      } |]
       assertValid schema $ object [("positiveNumber", Number (fromInteger 13))]
       assertInvalid schema $ object [("positiveNumber", Number (fromInteger (-13)))]
       assertInvalid schema $ object [("positiveNumber", Number (fromRational (27 % 2)))]
       assertValid schema [aesonQQ| { "fooString": "foo", "barString": "bar" } |]
       assertInvalid schema [aesonQQ| { "fooString": null, "barString": "bar" } |]
   , testCase "additionalProperties" $ do
-      let additionalNumbers = [aesonQQ| {
-            "type": "object",
-            "properties": { "null": { "type": "null" } },
-            "patternProperties": {
-              ".+String$": { "type": "string" }
-            },
-            "additionalProperties": { "type": "number" }
-          } |]
+      additionalNumbers <- parseSchema [aesonQQ| {
+        "type": "object",
+        "properties": { "null": { "type": "null" } },
+        "patternProperties": {
+          ".+String$": { "type": "string" }
+        },
+        "additionalProperties": { "type": "number" }
+      } |]
       assertValid additionalNumbers [aesonQQ| {
         "null": null,
         "emptyString": "",
@@ -261,14 +261,14 @@ tests =
         "theLastThing": 999
       } |]
       assertInvalid additionalNumbers [aesonQQ| { "null": null, "notANumber": true } |]
-      let noAdditionalProperties = [aesonQQ| {
-            "type": "object",
-            "properties": { "null": { "type": "null" } },
-            "patternProperties": {
-              ".+String$": { "type": "string" }
-            },
-            "additionalProperties": false
-          } |]
+      noAdditionalProperties <- parseSchema [aesonQQ| {
+        "type": "object",
+        "properties": { "null": { "type": "null" } },
+        "patternProperties": {
+          ".+String$": { "type": "string" }
+        },
+        "additionalProperties": false
+      } |]
       assertValid noAdditionalProperties [aesonQQ| { "null": null, "emptyString": "" } |]
       assertInvalid noAdditionalProperties [aesonQQ| {
         "null": null,
@@ -277,27 +277,27 @@ tests =
         "theLastThing": 999
       } |]
   , testCase "enum" $ do
-      let testStrings = [aesonQQ| { "type": "string", "enum": ["foo", "bar", "blub"] } |]
+      testStrings <- parseSchema [aesonQQ| { "type": "string", "enum": ["foo", "bar", "blub"] } |]
       assertValid testStrings "foo"
       assertValid testStrings "bar"
       assertValid testStrings "blub"
       assertInvalid testStrings "lorem"
-      let oneTwoMapping = [aesonQQ| {
-            "type": "object",
-            "enum": [{ "eins": 1, "zwei": 2 }, { "un": 1, "deux": 2 }]
-          } |]
+      oneTwoMapping <- parseSchema [aesonQQ| {
+        "type": "object",
+        "enum": [{ "eins": 1, "zwei": 2 }, { "un": 1, "deux": 2 }]
+      } |]
       assertValid oneTwoMapping [aesonQQ| { "eins": 1, "zwei": 2 } |]
       assertInvalid oneTwoMapping emptyObject
       assertInvalid oneTwoMapping [aesonQQ| { "eins": 1, "zwei": 2, "drei": 3 } |]
       assertValid oneTwoMapping [aesonQQ| { "un": 1, "deux": 2 } |]
       assertInvalid oneTwoMapping [aesonQQ| { "one": 1, "two": 2 } |]
   , testCase "type: \"any\"" $ do
-      let schema = [aesonQQ| {
-            "type": "any",
-            "minimum": 2,
-            "maxItems": 2,
-            "pattern": "a$"
-          } |]
+      schema <- parseSchema [aesonQQ| {
+        "type": "any",
+        "minimum": 2,
+        "maxItems": 2,
+        "pattern": "a$"
+      } |]
       assertValid schema [aesonQQ| "a" |]
       assertInvalid schema [aesonQQ| "b" |]
       assertValid schema [aesonQQ| 3 |]
@@ -308,23 +308,23 @@ tests =
       assertValid schema [aesonQQ| [true, false] |]
       assertInvalid schema [aesonQQ| [true, false, true] |]
   , testCase "disallow" $ do
-      let onlyFloats = [aesonQQ| { "type": "number", "disallow": "integer" } |]
+      onlyFloats <- parseSchema [aesonQQ| { "type": "number", "disallow": "integer" } |]
       assertInvalid onlyFloats (Number $ fromInteger 3)
       assertValid onlyFloats (Number $ 9 + fromRational (3 % 4))
-      let notLengthThree = [aesonQQ| {
-            "type": "array",
-            "disallow": [{
-              "type": "array",
-              "minItems": 3,
-              "maxItems": 3
-            }]
-          } |]
+      notLengthThree <- parseSchema [aesonQQ| {
+        "type": "array",
+        "disallow": [{
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 3
+        }]
+      } |]
       assertValid notLengthThree [aesonQQ| [] |]
       assertValid notLengthThree [aesonQQ| [1] |]
       assertValid notLengthThree [aesonQQ| [1, 2] |]
       assertInvalid notLengthThree [aesonQQ| [1, 2, 3] |]
       assertValid notLengthThree [aesonQQ| [1, 2, 3, 4] |]
-      let everythingExceptNumbers = [aesonQQ| { "disallow": "number" } |]
+      everythingExceptNumbers <- parseSchema [aesonQQ| { "disallow": "number" } |]
       assertInvalid everythingExceptNumbers [aesonQQ| 3 |]
       assertInvalid everythingExceptNumbers [aesonQQ| 3.5 |]
       assertValid everythingExceptNumbers [aesonQQ| true |]
@@ -334,99 +334,110 @@ tests =
       assertValid everythingExceptNumbers [aesonQQ| null |]
   , testGroup "format"
       [ testCase "regex" $ do
-          assertValid [aesonQQ| { "type": "string", "format": "regex" } |] "([abc])+\\s+$"
-          assertInvalid [aesonQQ| { "type": "string", "format": "regex" } |] "^(abc]"
+          isRegex <- parseSchema [aesonQQ| { "type": "string", "format": "regex" } |]
+          assertValid isRegex "([abc])+\\s+$"
+          assertInvalid isRegex "^(abc]"
       ]
   , testCase "type: subschema" $ do
-      let schema = [aesonQQ| {
-            "type": [
-              {
-                "type": "object",
-                "properties": { "insert": { "type": "string", "minLength": 1 } },
-                "additionalProperties": false
-              },
-              {
-                "type": "object",
-                "properties": { "delete": { "type": "number", "minimum": 1 } },
-                "additionalProperties": false
-              },
-              {
-                "type": "object",
-                "properties": { "retain": { "type": "number", "minimum": 1 } },
-                "additionalProperties": false
-              }
-            ]
-          } |]
+      schema <- parseSchema [aesonQQ| {
+        "type": [
+          {
+            "type": "object",
+            "properties": { "insert": { "type": "string", "minLength": 1 } },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": { "delete": { "type": "number", "minimum": 1 } },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": { "retain": { "type": "number", "minimum": 1 } },
+            "additionalProperties": false
+          }
+        ]
+      } |]
       assertValid schema [aesonQQ| { "insert": "lorem" } |]
       assertInvalid schema [aesonQQ| { "insert": "lorem", "delete": 5 } |]
       assertValid schema [aesonQQ| { "delete": 5 } |]
       assertInvalid schema [aesonQQ| { "delete": 5, "retain": 76 } |]
       assertValid schema [aesonQQ| { "retain": 76 } |]
   , testCase "dependencies" $ do
-      let aRequiresB = [aesonQQ| {
-            "type": "object",
-            "dependencies": { "a": "b" }
-          } |]
+      aRequiresB <- parseSchema [aesonQQ| {
+        "type": "object",
+        "dependencies": { "a": "b" }
+      } |]
       assertValid aRequiresB emptyObject
       assertValid aRequiresB [aesonQQ| { "b": false } |]
       assertValid aRequiresB [aesonQQ| { "a": true, "b": false } |]
       assertInvalid aRequiresB [aesonQQ| { "a": 3 } |]
-      let aRequiresBToBeANumber = [aesonQQ| {
-            "type": "object",
-            "dependencies": { "a": { "properties": { "b": { "type": "number" } } } }
-          } |]
+      aRequiresBToBeANumber <- parseSchema [aesonQQ| {
+        "type": "object",
+        "dependencies": { "a": { "properties": { "b": { "type": "number" } } } }
+      } |]
       assertValid aRequiresBToBeANumber emptyObject
       assertValid aRequiresBToBeANumber [aesonQQ| { "b": "lorem" } |]
       assertValid aRequiresBToBeANumber [aesonQQ| { "a": "yes, we can" } |]
       assertInvalid aRequiresBToBeANumber [aesonQQ| { "a": "yes, we can", "b": "lorem" } |]
       assertValid aRequiresBToBeANumber [aesonQQ| { "a": "hi there", "b": 42 } |]
-      let aDisallowsB = [aesonQQ| {
-            "type": "object",
-            "dependencies": {
-              "a": {
-                "disallow": [{
-                  "properties": {
-                    "b": { "type": "any", "required": true }
-                  }
-                }]
+      aDisallowsB <- parseSchema [aesonQQ| {
+        "type": "object",
+        "dependencies": {
+          "a": {
+            "disallow": [{
+              "properties": {
+                "b": { "type": "any", "required": true }
               }
-            }
-          } |]
+            }]
+          }
+        }
+      } |]
       assertValid aDisallowsB [aesonQQ| { "a": "lorem" } |]
       assertValid aDisallowsB [aesonQQ| { "b": 42 } |]
       assertInvalid aDisallowsB [aesonQQ| { "a": "lorem", "b": 42 } |]
   , testCase "required" $ do
-      let schema = [aesonQQ| {
-            "type": "object",
-            "properties": {
-              "a": { "required": true }
-            }
-          } |]
+      schema <- parseSchema [aesonQQ| {
+        "type": "object",
+        "properties": {
+          "a": { "required": true }
+        }
+      } |]
       assertInvalid schema emptyObject
       assertValid schema [aesonQQ| { "a": [1, 2, 3] } |]
   , testCase "extends" $ do
-      let schema = [aesonQQ| {
-            "type": "object",
+      schema <- parseSchema [aesonQQ| {
+        "type": "object",
+        "properties": {
+          "a": { "type": "number" }
+        },
+        "extends": [
+          {
             "properties": {
-              "a": { "type": "number" }
-            },
-            "extends": [
-              {
-                "properties": {
-                  "a": { "required": true }
-                }
-              },
-              {
-                "patternProperties": {
-                  "^[a-z]$": { "minimum": -3 }
-                }
-              }
-            ]
-          } |]
+              "a": { "required": true }
+            }
+          },
+          {
+            "patternProperties": {
+              "^[a-z]$": { "minimum": -3 }
+            }
+          }
+        ]
+      } |]
       assertValid schema [aesonQQ| { "a": 2 } |]
       assertInvalid schema emptyObject
       assertInvalid schema [aesonQQ| { "a": -4 } |]
       assertInvalid schema [aesonQQ| { "a": "foo" } |]
       assertInvalid schema [aesonQQ| { "a": -1, "b": -10 } |]
       assertValid schema [aesonQQ| { "a": -1, "ba": -10 } |]
+  , testCase "$ref" $ do
+      let a = empty { schemaDRef = Just "b", schemaMinimum = Just 3 }
+          b = empty { schemaType = [Choice1of2 "number"], schemaMaximum = Just 2 }
+          m = M.fromList [("a" :: String, a), ("b", b)]
+          m' = followReferences m
+      case M.lookup "a" m' of
+        Nothing -> HU.assertFailure "followReferences"
+        Just a' -> do
+          assertValid a' (Number 1)
+          assertInvalid a' (Number 4)
   ]
