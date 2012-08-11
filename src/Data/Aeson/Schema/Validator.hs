@@ -176,7 +176,7 @@ validateObject schema obj = allValid
           Choice1of2 props -> allValid $ flip map props $ \prop -> case H.lookup prop obj of
             Nothing -> validationError $ "property " ++ unpack k ++ " depends on property " ++ show prop
             Just _ -> valid
-          Choice2of2 depSchema -> validateObject depSchema obj
+          Choice2of2 depSchema -> validate depSchema (Object obj)
     requiredProperties = map fst . filter (schemaRequired . snd) . H.toList $ schemaProperties schema
     checkRequiredProperty key = case H.lookup key obj of
       Nothing -> validationError $ "required property " ++ unpack key ++ " is missing"

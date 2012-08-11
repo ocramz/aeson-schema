@@ -27,7 +27,7 @@ assertValid sch inst = do
 assertInvalid sch inst = do
   schema <- parseSchema sch
   case validate schema inst of
-    Just e -> return ()
+    Just _ -> return ()
     Nothing -> HU.assertFailure "expected a validation error"
 
 parseSchema :: Value -> IO (Schema V3 String)
@@ -380,6 +380,21 @@ tests =
       assertValid aRequiresBToBeANumber [aesonQQ| { "a": "yes, we can" } |]
       assertInvalid aRequiresBToBeANumber [aesonQQ| { "a": "yes, we can", "b": "lorem" } |]
       assertValid aRequiresBToBeANumber [aesonQQ| { "a": "hi there", "b": 42 } |]
+      let aDisallowsB = [aesonQQ| {
+            "type": "object",
+            "dependencies": {
+              "a": {
+                "disallow": [{
+                  "properties": {
+                    "b": { "type": "any", "required": true }
+                  }
+                }]
+              }
+            }
+          } |]
+      assertValid aDisallowsB [aesonQQ| { "a": "lorem" } |]
+      assertValid aDisallowsB [aesonQQ| { "b": 42 } |]
+      assertInvalid aDisallowsB [aesonQQ| { "a": "lorem", "b": 42 } |]
   , testCase "required" $ do
       let schema = [aesonQQ| {
             "type": "object",

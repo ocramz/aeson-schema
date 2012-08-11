@@ -35,7 +35,7 @@ tests =
   , testCase "followReferences" $ do
       let a = TestFunctor 1 "b"
       let b = TestFunctor 2 "a"
-      let m = M.fromList [("a", a), ("b", b)]
+      let m = M.fromList [("a" :: String, a), ("b", b)]
       let m' = followReferences m
       HU.assertBool "m' has the members 'a' and 'b'" $ "a" `M.member` m' && "b" `M.member` m'
       case M.lookup "a" m' of
