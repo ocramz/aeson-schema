@@ -1,5 +1,3 @@
-{-# LANGUAGE TemplateHaskell, OverloadedStrings #-}
-
 module Data.Aeson.Schema.Choice.Tests
   ( tests
   ) where
