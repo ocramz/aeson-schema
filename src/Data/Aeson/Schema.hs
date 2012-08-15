@@ -84,14 +84,14 @@ data V3
 
 instance Functor (Schema version) where
   fmap f s = s
-    { schemaType = choice2 id (fmap f) <$> schemaType s
+    { schemaType = mapChoice2 id (fmap f) <$> schemaType s
     , schemaProperties = fmap f <$> schemaProperties s
     , schemaPatternProperties = second (fmap f) <$> schemaPatternProperties s
-    , schemaAdditionalProperties = choice3 id id (fmap f) (schemaAdditionalProperties s)
-    , schemaItems = choice3 id (fmap f) (fmap $ fmap f) <$> schemaItems s
-    , schemaAdditionalItems = choice3 id id (fmap f) (schemaAdditionalItems s)
-    , schemaDependencies = choice2 id (fmap f) <$> schemaDependencies s
-    , schemaDisallow = choice2 id (fmap f) <$> schemaDisallow s
+    , schemaAdditionalProperties = mapChoice3 id id (fmap f) (schemaAdditionalProperties s)
+    , schemaItems = mapChoice3 id (fmap f) (fmap $ fmap f) <$> schemaItems s
+    , schemaAdditionalItems = mapChoice3 id id (fmap f) (schemaAdditionalItems s)
+    , schemaDependencies = mapChoice2 id (fmap f) <$> schemaDependencies s
+    , schemaDisallow = mapChoice2 id (fmap f) <$> schemaDisallow s
     , schemaExtends = fmap f <$> schemaExtends s
     , schemaDRef = f <$> schemaDRef s
     }

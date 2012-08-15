@@ -41,9 +41,15 @@ tests =
       Array (fromList []) HU.@=? toJSON (Choice2of3 () :: Choice3 (Either Char Bool) () (Maybe String))
       Null HU.@=? toJSON (Choice3of3 Nothing :: Choice3 (Either Char Bool) () (Maybe String))
   , testCase "choice3" $ do
-      Choice1of3 "LOREM" HU.@=? choice3 (map toUpper) (+1) not (Choice1of3 "lorem")
-      Choice2of3 4 HU.@=? choice3 (map toUpper) (+1) not (Choice2of3 3)
-      Choice3of3 True HU.@=? choice3 (map toUpper) (+1) not (Choice3of3 False)
+      let rnd = round :: Double -> Int
+      (3 :: Int) HU.@=? choice3 length id rnd (Choice1of3 ("abc" :: String))
+      (4 :: Int) HU.@=? choice3 length id rnd (Choice2of3 4)
+      (5 :: Int) HU.@=? choice3 length id rnd (Choice3of3 (4.6 :: Double))
+  , testCase "mapChoice3" $ do
+      let plus1 = (+1) :: Int -> Int
+      Choice1of3 "LOREM" HU.@=? mapChoice3 (map toUpper) plus1 not (Choice1of3 "lorem")
+      Choice2of3 4 HU.@=? mapChoice3 (map toUpper) plus1 not (Choice2of3 (3 :: Int))
+      Choice3of3 True HU.@=? mapChoice3 (map toUpper) plus1 not (Choice3of3 False)
   , testCase "choice2of3s" $ do
-      ["eins", "zwei", "drei"] HU.@=? choice2of3s [Choice1of3 True, Choice2of3 "eins", Choice2of3 "zwei", Choice3of3 '?', Choice2of3 "drei"]
+      ["eins" :: String, "zwei", "drei"] HU.@=? choice2of3s [Choice1of3 True, Choice2of3 "eins", Choice2of3 "zwei", Choice3of3 '?', Choice2of3 "drei"]
   ]
