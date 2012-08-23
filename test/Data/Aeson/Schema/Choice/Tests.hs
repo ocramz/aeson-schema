@@ -3,11 +3,15 @@ module Data.Aeson.Schema.Choice.Tests
   ) where
 
 import Test.Framework
+import Test.Framework.Providers.QuickCheck2
+import Test.QuickCheck (Gen, arbitrary)
 import Test.Framework.Providers.HUnit
 import qualified Test.HUnit as HU
 
 import Data.Text ()
+import Data.List (nub)
 import Data.Vector (fromList)
+import Control.Monad (sequence)
 import Data.Aeson
 import Data.Aeson.Schema.Choice
 import Language.Haskell.TH
@@ -40,6 +44,9 @@ tests =
       object [ "Left" .= String "a" ] HU.@=? toJSON (Choice1of3 (Left 'a') :: Choice3 (Either Char Bool) () (Maybe String))
       Array (fromList []) HU.@=? toJSON (Choice2of3 () :: Choice3 (Either Char Bool) () (Maybe String))
       Null HU.@=? toJSON (Choice3of3 Nothing :: Choice3 (Either Char Bool) () (Maybe String))
+  , testProperty "arbitrary" $ do
+      xs <- sequence $ replicate 100 (arbitrary :: Gen (Choice3 () () ()))
+      return $ length (nub xs) == 3
   , testCase "choice3" $ do
       let rnd = round :: Double -> Int
       (3 :: Int) HU.@=? choice3 length id rnd (Choice1of3 ("abc" :: String))

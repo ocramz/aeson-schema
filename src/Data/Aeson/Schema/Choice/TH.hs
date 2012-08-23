@@ -5,8 +5,10 @@ module Data.Aeson.Schema.Choice.TH
   ) where
 
 import Control.Monad (forM)
+import Control.Applicative ((<$>))
 import Language.Haskell.TH
 import Data.Aeson (ToJSON (..), FromJSON (..))
+import Test.QuickCheck (Arbitrary (..), oneof)
 import Control.Applicative (Alternative (..))
 
 generateChoice :: Int -> Q [Dec]
@@ -21,17 +23,23 @@ generateChoice n = do
   let tyCon = appConT tyName tyParams
   let genClassConstraints c = cxt $ map (classP c . singleton) tyParams
   instToJSON <- instanceD (genClassConstraints ''ToJSON)
-                          (appT (conT ''ToJSON) tyCon)
+                          (conT ''ToJSON `appT` tyCon)
                           [ funD 'toJSON $ zipWith genToJSONClause conNames tyParamNames ]
   instFromJSON <- instanceD (genClassConstraints ''FromJSON)
-                            (appT (conT ''FromJSON) tyCon)
+                            (conT ''FromJSON `appT` tyCon)
                             [ let v = mkName "v" in
                               funD 'parseJSON [clause [varP v]
-                                                      (normalB $ foldl (\a b -> [e|(<|>)|] `appE` a `appE` b) (varE 'empty)
-                                                               $ map (\con -> varE 'fmap `appE` conE con `appE` (varE 'parseJSON `appE` (varE v))) conNames)
+                                                      (normalB $ foldl (\a b -> [| $a <|> $b |]) [| empty |]
+                                                               $ map (\con -> [| $(conE con) <$> parseJSON $(varE v) |]) conNames)
                                                       []
                                               ]
                             ]
+  instArbitrary <- instanceD (genClassConstraints ''Arbitrary)
+                             (conT ''Arbitrary `appT` tyCon)
+                             [ valD (varP 'arbitrary)
+                                    (normalB $ varE 'oneof `appE` listE (map (\con -> [| $(conE con) <$> arbitrary |]) conNames))
+                                    []
+                             ]
   let choiceN = mkName $ "choice" ++ show n
   let resultT = mkName "res"
   choiceFunDec <- sigD choiceN
@@ -73,7 +81,7 @@ generateChoice n = do
                                                       , noBindS (varE c)
                                                       ]) []]
     return [typeDec, funDef]
-  return $ [dataDec, instToJSON, instFromJSON, choiceFunDec, choiceFun, mapChoiceFunDec, mapChoiceFun] ++ choiceIofNFuns
+  return $ [dataDec, instToJSON, instFromJSON, instArbitrary, choiceFunDec, choiceFun, mapChoiceFunDec, mapChoiceFun] ++ choiceIofNFuns
   where
     singleton :: a -> [a]
     singleton = (:[])

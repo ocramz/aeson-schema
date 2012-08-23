@@ -1,7 +1,8 @@
 {-# LANGUAGE FlexibleInstances, TupleSections, EmptyDataDecls #-}
 
 module Data.Aeson.Schema
-  ( Schema (..)
+  ( SchemaType (..)
+  , Schema (..)
   , V3
   , Pattern (..)
   , mkPattern
@@ -47,13 +48,36 @@ instance FromJSON Pattern where
 mkPattern :: (Monad m) => Text -> m Pattern
 mkPattern t = liftM (Pattern t) $ makeRegexM (unpack t)
 
+data SchemaType = StringType
+                | NumberType
+                | IntegerType
+                | BooleanType
+                | ObjectType
+                | ArrayType
+                | NullType
+                | AnyType
+                deriving (Eq, Show, Read)
+
+instance FromJSON SchemaType where
+  parseJSON (String t) = case t of
+    "string"  -> return StringType
+    "number"  -> return NumberType
+    "integer" -> return IntegerType
+    "boolean" -> return BooleanType
+    "object"  -> return ObjectType
+    "array"   -> return ArrayType
+    "null"    -> return NullType
+    "any"     -> return AnyType
+    _         -> fail $ "not a valid type: " ++ unpack t
+  parseJSON _ = fail "not a string"
+
 data Schema version ref = Schema
-  { schemaType :: [Choice2 Text (Schema version ref)]
+  { schemaType :: [Choice2 SchemaType (Schema version ref)]
   , schemaProperties :: Map (Schema version ref)
   , schemaPatternProperties :: [(Pattern, Schema version ref)]
-  , schemaAdditionalProperties :: Choice3 Text Bool (Schema version ref)
-  , schemaItems :: Maybe (Choice3 Text (Schema version ref) [Schema version ref])
-  , schemaAdditionalItems :: Choice3 Text Bool (Schema version ref)
+  , schemaAdditionalProperties :: Choice2 Bool (Schema version ref)
+  , schemaItems :: Maybe (Choice2 (Schema version ref) [Schema version ref])
+  , schemaAdditionalItems :: Choice2 Bool (Schema version ref)
   , schemaRequired :: Bool
   , schemaDependencies :: Map (Choice2 [Text] (Schema version ref))
   , schemaMinimum :: Maybe Number
@@ -73,7 +97,7 @@ data Schema version ref = Schema
   , schemaDescription :: Maybe Text
   , schemaFormat :: Maybe Text
   , schemaDivisibleBy :: Maybe Number
-  , schemaDisallow :: [Choice2 Text (Schema version ref)]
+  , schemaDisallow :: [Choice2 SchemaType (Schema version ref)]
   , schemaExtends :: [Schema version ref]
   , schemaId :: Maybe Text
   , schemaDRef :: Maybe ref -- ^ $ref
@@ -87,9 +111,9 @@ instance Functor (Schema version) where
     { schemaType = mapChoice2 id (fmap f) <$> schemaType s
     , schemaProperties = fmap f <$> schemaProperties s
     , schemaPatternProperties = second (fmap f) <$> schemaPatternProperties s
-    , schemaAdditionalProperties = mapChoice3 id id (fmap f) (schemaAdditionalProperties s)
-    , schemaItems = mapChoice3 id (fmap f) (fmap $ fmap f) <$> schemaItems s
-    , schemaAdditionalItems = mapChoice3 id id (fmap f) (schemaAdditionalItems s)
+    , schemaAdditionalProperties = mapChoice2 id (fmap f) (schemaAdditionalProperties s)
+    , schemaItems = mapChoice2 (fmap f) (fmap $ fmap f) <$> schemaItems s
+    , schemaAdditionalItems = mapChoice2 id (fmap f) (schemaAdditionalItems s)
     , schemaDependencies = mapChoice2 id (fmap f) <$> schemaDependencies s
     , schemaDisallow = mapChoice2 id (fmap f) <$> schemaDisallow s
     , schemaExtends = fmap f <$> schemaExtends s
@@ -100,9 +124,9 @@ instance Foldable (Schema version) where
   foldr f start s = ffoldr (ffoldr f) (choice2of2s $ schemaType s)
                   . ffoldr (ffoldr f) (schemaProperties s)
                   . ffoldr (ffoldr f) (map snd $ schemaPatternProperties s)
-                  . foldChoice3of3 (ffoldr f) (schemaAdditionalProperties s)
-                  . ffoldr (\items -> foldChoice2of3 (ffoldr f) items . foldChoice3of3 (ffoldr $ ffoldr f) items) (schemaItems s)
-                  . foldChoice3of3 (ffoldr f) (schemaAdditionalItems s)
+                  . foldChoice2of2 (ffoldr f) (schemaAdditionalProperties s)
+                  . ffoldr (\items -> foldChoice1of2 (ffoldr f) items . foldChoice2of2 (ffoldr $ ffoldr f) items) (schemaItems s)
+                  . foldChoice2of2 (ffoldr f) (schemaAdditionalItems s)
                   . ffoldr (ffoldr f) (choice2of2s $ toList $ schemaDependencies s)
                   . ffoldr (ffoldr f) (choice2of2s $ schemaDisallow s)
                   . ffoldr (ffoldr f) (schemaExtends s)
@@ -111,21 +135,21 @@ instance Foldable (Schema version) where
     where
       ffoldr :: (Foldable t) => (a -> b -> b) -> t a -> b -> b
       ffoldr g = flip $ foldr g
-      foldChoice2of3 :: (a -> b -> b) -> Choice3 x a y -> b -> b
-      foldChoice2of3 g (Choice2of3 c) = g c
-      foldChoice2of3 _ _ = id
-      foldChoice3of3 :: (a -> b -> b) -> Choice3 x y a -> b -> b
-      foldChoice3of3 g (Choice3of3 c) = g c
-      foldChoice3of3 _ _ = id
+      foldChoice1of2 :: (a -> b -> b) -> Choice2 a x -> b -> b
+      foldChoice1of2 g (Choice1of2 c) = g c
+      foldChoice1of2 _ _ = id
+      foldChoice2of2 :: (a -> b -> b) -> Choice2 x a -> b -> b
+      foldChoice2of2 g (Choice2of2 c) = g c
+      foldChoice2of2 _ _ = id
 
 empty :: Schema version ref
 empty = Schema
-  { schemaType = []
+  { schemaType = [Choice1of2 AnyType]
   , schemaProperties = H.empty
   , schemaPatternProperties = []
-  , schemaAdditionalProperties = Choice2of3 True
+  , schemaAdditionalProperties = Choice1of2 True
   , schemaItems = Nothing
-  , schemaAdditionalItems = Choice2of3 True
+  , schemaAdditionalItems = Choice1of2 True
   , schemaRequired = False
   , schemaDependencies = H.empty
   , schemaMinimum = Nothing
@@ -159,9 +183,9 @@ instance (FromJSON ref) => FromJSON (Schema V3 ref) where
     Schema <$> (parseSingleOrArray =<< parseFieldDefault "type" "any")
            <*> parseFieldDefault "properties" emptyObject
            <*> (parseFieldDefault "patternProperties" emptyObject >>= mapM (\(k, v) -> fmap (,v) (mkPattern k)) . H.toList)
-           <*> (parseField "additionalProperties" .!= Choice2of3 True)
+           <*> (parseField "additionalProperties" .!= Choice1of2 True)
            <*> parseField "items"
-           <*> (parseField "additionalItems" .!= Choice2of3 True)
+           <*> (parseField "additionalItems" .!= Choice1of2 True)
            <*> parseFieldDefault "required" (Bool False)
            <*> (traverse parseDependency =<< parseFieldDefault "dependencies" emptyObject)
            <*> parseField "minimum"

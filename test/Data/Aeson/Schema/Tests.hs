@@ -47,9 +47,9 @@ tests =
             { schemaType = [Choice2of2 $ schemaWithRef "a"]
             , schemaProperties = H.fromList [("aProperty", schemaWithRef "b")]
             , schemaPatternProperties = let Right p = mkPattern "lorem.+" in [(p, schemaWithRef "c")]
-            , schemaAdditionalProperties = Choice3of3 $ schemaWithRef "d"
-            , schemaItems = Just $ Choice3of3 [schemaWithRef "e", schemaWithRef "f"]
-            , schemaAdditionalItems = Choice3of3 $ schemaWithRef "g"
+            , schemaAdditionalProperties = Choice2of2 $ schemaWithRef "d"
+            , schemaItems = Just $ Choice2of2 [schemaWithRef "e", schemaWithRef "f"]
+            , schemaAdditionalItems = Choice2of2 $ schemaWithRef "g"
             , schemaDependencies = H.fromList [("aProperty", Choice2of2 $ schemaWithRef "h")]
             , schemaDisallow = [Choice2of2 $ schemaWithRef "i"]
             , schemaExtends = [schemaWithRef "j"]

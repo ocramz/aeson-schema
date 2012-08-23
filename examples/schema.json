@@ -7,7 +7,7 @@
 		"type" : {
 			"type" : ["string", "array"],
 			"items" : {
-				"type" : ["string", "#"]
+				"type" : ["string", { "$ref" : "#" }]
 			},
 			"uniqueItems" : true,
 			"default" : "any"
@@ -15,13 +15,13 @@
 		
 		"properties" : {
 			"type" : "object",
-			"additionalProperties" : "#",
+			"additionalProperties" : { "$ref" : "#" },
 			"default" : {}
 		},
 		
 		"items" : {
-			"type" : ["#", "array"],
-			"items" : "#",
+			"type" : [{ "$ref" : "#" }, "array"],
+			"items" : { "$ref" : "#" },
 			"default" : {}
 		},
 		
@@ -31,16 +31,16 @@
 		},
 		
 		"additionalProperties" : {
-			"type" : ["#", "boolean"],
+			"type" : [{ "$ref" : "#" }, "boolean"],
 			"default" : {}
 		},
 		"additionalItems" : {
-			"type" : ["#", "boolean"],
+			"type" : [{ "$ref" : "#" }, "boolean"],
 			"default" : {}
 		},
 		
 		"requires" : {
-			"type" : ["string", "#"]
+			"type" : ["string", { "$ref" : "#" }]
 		},
 		
 		"minimum" : {
@@ -113,16 +113,16 @@
 		},
 		
 		"disallow" : {
-			"type" : ["string", "array", "#"],
+			"type" : ["string", "array", { "$ref" : "#" }],
 			"items" : {
-				"type" : ["string", "#"]
+				"type" : ["string", { "$ref" : "#" }]
 			},
 			"uniqueItems" : true
 		},
 		
 		"extends" : {
-			"type" : ["#", "array"],
-			"items" : "#",
+			"type" : [{ "$ref" : "#" }, "array"],
+			"items" : { "$ref" : "#" },
 			"default" : {}
 		}
 	},

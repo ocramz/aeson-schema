@@ -432,7 +432,7 @@ tests =
       assertValid schema [aesonQQ| { "a": -1, "ba": -10 } |]
   , testCase "$ref" $ do
       let a = empty { schemaDRef = Just "b", schemaMinimum = Just 3 }
-          b = empty { schemaType = [Choice1of2 "number"], schemaMaximum = Just 2 }
+          b = empty { schemaType = [Choice1of2 NumberType], schemaMaximum = Just 2 }
           m = M.fromList [("a" :: String, a), ("b", b)]
           m' = followReferences m
       case M.lookup "a" m' of
