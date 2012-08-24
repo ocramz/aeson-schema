@@ -39,6 +39,20 @@ library
                        QuickCheck >= 2.4.2 && < 2.5,
                        syb >= 0.3.6.1
 
+executable generate-aeson-schema
+  ghc-options:         -Wall
+  main-is:             generate-aeson-schema.hs
+  hs-source-dirs:      .
+  build-depends:       base == 4.5.*,
+                       aeson-schema,
+                       cmdargs,
+                       containers,
+                       text,
+                       aeson,
+                       template-haskell,
+                       attoparsec,
+                       bytestring
+
 test-suite tests
   ghc-options:         -Wall
   hs-source-dirs:      test
