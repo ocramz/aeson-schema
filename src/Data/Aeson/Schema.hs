@@ -4,10 +4,11 @@ module Data.Aeson.Schema
   ( SchemaType (..)
   , Schema (..)
   , V3
+  , TupleFix (..)
+  , RecursiveSchema
   , Pattern (..)
   , mkPattern
   , empty
-  , Fix (..)
   , followReferences
   ) where
 
@@ -106,6 +107,9 @@ data Schema version ref = Schema
 
 data V3
 
+newtype TupleFix a b = TupleFix (a (b, TupleFix a b))
+type RecursiveSchema ver ref = Schema ver (ref, TupleFix (Schema ver) ref)
+
 instance Functor (Schema version) where
   fmap f s = s
     { schemaType = mapChoice2 id (fmap f) <$> schemaType s
@@ -176,8 +180,6 @@ empty = Schema
   , schemaDSchema = Nothing
   }
 
-newtype Fix a = Fix (a (Fix a))
-
 instance (FromJSON ref) => FromJSON (Schema V3 ref) where
   parseJSON (Object o) =
     Schema <$> (parseSingleOrArray =<< parseFieldDefault "type" "any")
@@ -227,5 +229,5 @@ singleOrArray p v = (:[]) <$> p v
 parseSingleOrArray :: (FromJSON a) => Value -> Parser [a]
 parseSingleOrArray = singleOrArray parseJSON
 
-followReferences :: (Ord k, Functor f) => M.Map k (f k) -> M.Map k (f (Fix f))
-followReferences input = fix $ \output -> fmap (Fix . (M.!) output) <$> input
+followReferences :: (Ord k, Functor f) => M.Map k (f k) -> M.Map k (f (k, TupleFix f k))
+followReferences input = fix $ \output -> fmap (\ref -> (ref, TupleFix (output M.! ref))) <$> input

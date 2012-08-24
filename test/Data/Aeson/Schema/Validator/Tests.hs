@@ -20,7 +20,7 @@ import Data.Aeson.Schema
 import Data.Aeson.Schema.Validator
 import Data.Aeson.Schema.Choice
 
-assertValid, assertInvalid :: Schema V3 (Fix (Schema V3)) -> Value -> HU.Assertion
+assertValid, assertInvalid :: RecursiveSchema V3 ref -> Value -> HU.Assertion
 assertValid sch inst = case validate sch inst of
   Just e -> HU.assertFailure e
   Nothing -> return ()
@@ -28,7 +28,7 @@ assertInvalid sch inst = case validate sch inst of
   Just _ -> return ()
   Nothing -> HU.assertFailure "expected a validation error"
 
-parseSchema :: Value -> IO (Schema V3 (Fix (Schema V3)))
+parseSchema :: Value -> IO (RecursiveSchema V3 ref)
 parseSchema v = case fromJSON v :: Result (Schema V3 String) of
   Error e -> HU.assertFailure e >> fail "invalid schema"
   Success schema -> return $ fmap (error "schema mustn't contain a $ref") schema

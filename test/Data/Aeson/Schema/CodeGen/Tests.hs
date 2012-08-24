@@ -75,7 +75,7 @@ instance Arbitrary Value where
 instance Arbitrary SchemaType where
   arbitrary = oneof $ map pure [StringType, NumberType, IntegerType, BooleanType, ObjectType, ArrayType, NullType, AnyType]
 
-generateValidValue :: Schema V3 (Fix (Schema V3)) -> Gen Value
+generateValidValue :: RecursiveSchema V3 Text -> Gen Value
 generateValidValue schema = suchThat arbitrary (isNothing . validate schema)
 
 arbitrarySchema :: (Eq a) => Int -> Gen (Schema V3 a)

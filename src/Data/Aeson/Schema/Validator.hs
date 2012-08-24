@@ -44,11 +44,9 @@ instance Validator Maybe where
   isValid = isNothing
   allValid = msum
 
-type RecursiveSchema v = Schema v (Fix (Schema v))
-
-validate :: RecursiveSchema V3 -> Value -> SchemaValidator
+validate :: RecursiveSchema V3 ref -> Value -> SchemaValidator
 validate schema val = case schemaDRef schema of
-  Just (Fix referencedSchema) -> validate referencedSchema val
+  Just (_, TupleFix referencedSchema) -> validate referencedSchema val
   Nothing -> allValid
     [ anyValid "no type matched" $ map validateType (schemaType schema)
     , maybeCheck checkEnum $ schemaEnum schema
@@ -56,7 +54,7 @@ validate schema val = case schemaDRef schema of
     , allValid $ map (flip validate val) (schemaExtends schema)
     ]
   where
-    validateType :: Choice2 SchemaType (RecursiveSchema V3) -> SchemaValidator
+    validateType :: Choice2 SchemaType (RecursiveSchema V3 ref) -> SchemaValidator
     validateType (Choice1of2 t) = case (t, val) of
       (StringType, String str) -> validateString schema str
       (NumberType, Number num) -> validateNumber schema num
@@ -94,7 +92,7 @@ validate schema val = case schemaDRef schema of
     isType _ AnyType = True
     isType _ _ = False
 
-    validateTypeDisallowed :: Choice2 SchemaType (RecursiveSchema V3) -> SchemaValidator
+    validateTypeDisallowed :: Choice2 SchemaType (RecursiveSchema V3 ref) -> SchemaValidator
     validateTypeDisallowed (Choice1of2 t) = if isType val t
         then validationError $ "values of type " ++ show t ++ " are not allowed here"
         else valid
@@ -108,7 +106,7 @@ maybeCheck :: (a -> SchemaValidator) -> Maybe a -> SchemaValidator
 maybeCheck p (Just a) = p a
 maybeCheck _ _ = valid
 
-validateString :: RecursiveSchema V3 -> Text -> SchemaValidator
+validateString :: RecursiveSchema V3 ref -> Text -> SchemaValidator
 validateString schema str = allValid
   [ checkMinLength $ schemaMinLength schema
   , maybeCheck checkMaxLength (schemaMaxLength schema)
@@ -121,7 +119,7 @@ validateString schema str = allValid
     checkPattern (Pattern source compiled) = assert (match compiled $ unpack str) $ "string must match pattern " ++ show source
     checkFormat format = maybe valid validationError $ validateFormat format str
 
-validateNumber :: RecursiveSchema V3 -> Number -> SchemaValidator
+validateNumber :: RecursiveSchema V3 ref -> Number -> SchemaValidator
 validateNumber schema num = allValid
   [ maybeCheck (checkMinimum $ schemaExclusiveMinimum schema) $ schemaMinimum schema
   , maybeCheck (checkMaximum $ schemaExclusiveMaximum schema) $ schemaMaximum schema
@@ -136,7 +134,7 @@ validateNumber schema num = allValid
       else assert (num <= m) $ "number must be less than or equal " ++ show m
     checkDivisibleBy devisor = assert (num `isDivisibleBy` devisor) $ "number must be devisible by " ++ show devisor
 
-validateObject :: RecursiveSchema V3 -> A.Object -> SchemaValidator
+validateObject :: RecursiveSchema V3 ref -> A.Object -> SchemaValidator
 validateObject schema obj = allValid
   [ allValid $ map (uncurry checkKeyValue) (H.toList obj)
   , allValid $ map checkRequiredProperty requiredProperties
@@ -166,7 +164,7 @@ validateObject schema obj = allValid
       Nothing -> validationError $ "required property " ++ unpack key ++ " is missing"
       Just _ -> valid
 
-validateArray :: RecursiveSchema V3 -> A.Array -> SchemaValidator
+validateArray :: RecursiveSchema V3 ref -> A.Array -> SchemaValidator
 validateArray schema arr = allValid
   [ checkMinItems $ schemaMinItems schema
   , maybeCheck checkMaxItems $ schemaMaxItems schema

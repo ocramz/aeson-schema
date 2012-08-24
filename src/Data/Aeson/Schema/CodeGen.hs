@@ -40,12 +40,9 @@ import Data.Aeson.Schema
 import Data.Aeson.Schema.Validator
 import Data.Aeson.Schema.Choice
 
-newtype TupleFix a b = TupleFix (a (b, TupleFix a b))
-
 instance (Show (a (b, TupleFix a b)), Show b) => Show (TupleFix a b) where
   show (TupleFix a) = "TupleFix " ++ show a
 
-type RecursiveSchema ver = Schema ver (Text, TupleFix (Schema ver) Text)
 
 type Code = [Either Text Dec]
 type StringSet = HS.HashSet String
@@ -125,7 +122,7 @@ instance (Lift a, Lift b, Lift c) => Lift (Choice3 a b c) where
 instance Lift Pattern where
   lift (Pattern src _) = [| let Right p = mkPattern src in p |]
 
-instance Lift (RecursiveSchema V3) where
+instance Lift (RecursiveSchema V3 Text) where
   lift schema = recConE ''Schema
     [ field 'schemaType $ schemaType schema
     , field 'schemaProperties $ schemaProperties schema
@@ -190,7 +187,7 @@ getUsedModules = nub . concatMap (everything (++) ([] `mkQ` extractModule))
     extractModule :: Name -> [String]
     extractModule = maybeToList . nameModule
 
-generate :: M.Map Text (RecursiveSchema V3) -> Q Code
+generate :: M.Map Text (RecursiveSchema V3 Text) -> Q Code
 generate m = do
   code <- execWriterT $ flip evalStateT HS.empty $ unCodeGenM $ generateTopLevel m
   let code' = map (mapEither id replaceHiddenModules) code
@@ -202,10 +199,10 @@ generate m = do
     mapEither f _ (Left l) = Left (f l)
     mapEither _ f (Right r) = Right (f r)
 
-generateTopLevel :: M.Map Text (RecursiveSchema V3) -> CodeGenM ()
+generateTopLevel :: M.Map Text (RecursiveSchema V3 Text) -> CodeGenM ()
 generateTopLevel m = forM_ (M.toList m) $ uncurry generateSchema
 
-generateSchema :: Text -> RecursiveSchema V3 -> CodeGenM (TypeQ, ExpQ)
+generateSchema :: Text -> RecursiveSchema V3 Text -> CodeGenM (TypeQ, ExpQ)
 generateSchema name schema = case schemaDRef schema of
   Just (_, TupleFix otherSchema) -> generateSchema name otherSchema -- TODO
   Nothing -> second wrap <$> case schemaType schema of
@@ -283,7 +280,7 @@ lambdaPattern pat body err = lamE [varP val] $ caseE (varE val)
 returnE :: ExpQ -> ExpQ
 returnE r = [| return $(r) |]
 
-generateString :: RecursiveSchema V3 -> CodeGenM (TypeQ, ExpQ)
+generateString :: RecursiveSchema V3 Text -> CodeGenM (TypeQ, ExpQ)
 generateString schema = return (conT ''Text, code)
   where
     str = mkName "str"
@@ -304,7 +301,7 @@ generateString schema = return (conT ''Text, code)
                          (doE $ checkers ++ [noBindS [| return $(varE str) |]])
                          [| fail "not a string" |]
 
-generateNumber :: RecursiveSchema V3 -> CodeGenM (TypeQ, ExpQ)
+generateNumber :: RecursiveSchema V3 Text -> CodeGenM (TypeQ, ExpQ)
 generateNumber schema = return (conT ''Number, code)
   where
     num = mkName "num"
@@ -312,7 +309,7 @@ generateNumber schema = return (conT ''Number, code)
                          (doE $ numberCheckers num schema ++ [noBindS [| return $(varE num) |]])
                          [| fail "not a number" |]
 
-generateInteger :: RecursiveSchema V3 -> CodeGenM (TypeQ, ExpQ)
+generateInteger :: RecursiveSchema V3 Text -> CodeGenM (TypeQ, ExpQ)
 generateInteger schema = return (conT ''Integer, code)
   where
     num = mkName "num"
@@ -320,7 +317,7 @@ generateInteger schema = return (conT ''Integer, code)
                          (doE $ numberCheckers num schema ++ [noBindS [| return $(varE "i") |]])
                          [| fail "not an integer" |]
 
-numberCheckers :: Name -> RecursiveSchema V3 -> [StmtQ]
+numberCheckers :: Name -> RecursiveSchema V3 Text -> [StmtQ]
 numberCheckers num schema = catMaybes
   [ checkMinimum (schemaExclusiveMinimum schema) <$> schemaMinimum schema
   , checkMaximum (schemaExclusiveMaximum schema) <$> schemaMaximum schema
@@ -361,7 +358,7 @@ firstUpper (c:cs) = toUpper c : cs
 firstLower "" = ""
 firstLower (c:cs) = toLower c : cs
 
-generateObject :: Text -> RecursiveSchema V3 -> CodeGenM (TypeQ, ExpQ)
+generateObject :: Text -> RecursiveSchema V3 Text -> CodeGenM (TypeQ, ExpQ)
 generateObject name schema = do
   let propertiesList = HM.toList $ schemaProperties schema
   (propertyNames, propertyTypes, propertyParsers, defaultParsers) <- fmap unzip4 $ forM propertiesList $ \(fieldName, propertySchema) -> do
@@ -425,7 +422,7 @@ generateObject name schema = do
         else Just (checkPatternAndAdditionalProperties (schemaPatternProperties schema) (schemaAdditionalProperties schema))
       ]
 
-generateArray :: Text -> RecursiveSchema V3 -> CodeGenM (TypeQ, ExpQ)
+generateArray :: Text -> RecursiveSchema V3 Text -> CodeGenM (TypeQ, ExpQ)
 generateArray name schema = case schemaItems schema of
   Nothing -> monomorphicArray (conT ''Value) (varE 'parseJSON)
   Just (Choice1of2 itemsSchema) -> do
@@ -473,7 +470,7 @@ generateArray name schema = case schemaItems schema of
       , if schemaUniqueItems schema then Just checkUnique else Nothing
       ]
 
-generateAny :: RecursiveSchema V3 -> CodeGenM (TypeQ, ExpQ)
+generateAny :: RecursiveSchema V3 Text -> CodeGenM (TypeQ, ExpQ)
 generateAny schema = return (conT ''Value, code)
   where
     val = mkName "val"
