@@ -57,9 +57,11 @@ newtype CodeGenM a = CodeGenM
 instance Quasi CodeGenM where
   qNewName s = CodeGenM $ do
     used <- get
-    let free = head $ dropWhile (`HS.member` used) $ (if null s then id else (s:)) $ map (\i -> s ++ "_" ++ show i) ([1..] :: [Int])
+    let free = head $ dropWhile (`HS.member` used) $ (if validName s then (s:) else id) $ map (\i -> s ++ "_" ++ show i) ([1..] :: [Int])
     put $ HS.insert free used
     return $ Name (mkOccName free) NameS
+    where
+      validName s = not (s `elem` ["", "_"])
   qReport b = CodeGenM . MT.lift . MT.lift . report b
   qRecover handler action = CodeGenM $ do
     currState <- get 
