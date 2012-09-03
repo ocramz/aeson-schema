@@ -13,6 +13,7 @@ import Data.Aeson (Value (..))
 import qualified Data.Aeson as A
 import qualified Data.Vector as V
 import qualified Data.HashMap.Strict as H
+import qualified Data.Map as M
 import Data.Text (Text, unpack, length)
 import Data.Attoparsec.Number (Number (..))
 import Text.Regex.PCRE (match)
@@ -44,33 +45,35 @@ instance Validator Maybe where
   isValid = isNothing
   allValid = msum
 
-validate :: RecursiveSchema V3 ref -> Value -> SchemaValidator
-validate schema val = case schemaDRef schema of
-  Just (_, TupleFix referencedSchema) -> validate referencedSchema val
+validate :: Ord ref => Graph (Schema V3) ref -> Schema V3 ref -> Value -> SchemaValidator
+validate graph schema val = case schemaDRef schema of
+  Just ref -> case M.lookup ref graph of
+    Nothing -> validationError "referenced schema is not in map"
+    Just referencedSchema -> validate graph referencedSchema val
   Nothing -> allValid
     [ anyValid "no type matched" $ map validateType (schemaType schema)
     , maybeCheck checkEnum $ schemaEnum schema
     , allValid $ map validateTypeDisallowed (schemaDisallow schema)
-    , allValid $ map (flip validate val) (schemaExtends schema)
+    , allValid $ map (flip (validate graph) val) (schemaExtends schema)
     ]
   where
-    validateType :: Choice2 SchemaType (RecursiveSchema V3 ref) -> SchemaValidator
+    --validateType :: Choice2 SchemaType (Schema V3 ref) -> SchemaValidator
     validateType (Choice1of2 t) = case (t, val) of
       (StringType, String str) -> validateString schema str
       (NumberType, Number num) -> validateNumber schema num
       (IntegerType, Number num@(I _)) -> validateNumber schema num
       (BooleanType, Bool _) -> valid
-      (ObjectType, Object obj) -> validateObject schema obj
-      (ArrayType, Array arr) -> validateArray schema arr
+      (ObjectType, Object obj) -> validateObject graph schema obj
+      (ArrayType, Array arr) -> validateArray graph schema arr
       (NullType, Null) -> valid
       (AnyType, _) -> case val of
         String str -> validateString schema str
         Number num -> validateNumber schema num
-        Object obj -> validateObject schema obj
-        Array arr  -> validateArray schema arr
+        Object obj -> validateObject graph schema obj
+        Array arr  -> validateArray graph schema arr
         _ -> valid
       (typ, _) -> validationError $ "type mismatch: expected " ++ show typ ++ " but got " ++ getType val
-    validateType (Choice2of2 s) = validate s val
+    validateType (Choice2of2 s) = validate graph s val
 
     getType :: A.Value -> String
     getType (String _) = "string"
@@ -92,11 +95,11 @@ validate schema val = case schemaDRef schema of
     isType _ AnyType = True
     isType _ _ = False
 
-    validateTypeDisallowed :: Choice2 SchemaType (RecursiveSchema V3 ref) -> SchemaValidator
+    --validateTypeDisallowed :: Choice2 SchemaType (Schema V3 ref) -> SchemaValidator
     validateTypeDisallowed (Choice1of2 t) = if isType val t
         then validationError $ "values of type " ++ show t ++ " are not allowed here"
         else valid
-    validateTypeDisallowed (Choice2of2 s) = assert (not . isNothing $ validate s val) $ "value disallowed"
+    validateTypeDisallowed (Choice2of2 s) = assert (not . isNothing $ validate graph s val) $ "value disallowed"
 
 assert :: Bool -> String -> SchemaValidator
 assert True _ = valid
@@ -106,7 +109,7 @@ maybeCheck :: (a -> SchemaValidator) -> Maybe a -> SchemaValidator
 maybeCheck p (Just a) = p a
 maybeCheck _ _ = valid
 
-validateString :: RecursiveSchema V3 ref -> Text -> SchemaValidator
+validateString :: Schema V3 ref -> Text -> SchemaValidator
 validateString schema str = allValid
   [ checkMinLength $ schemaMinLength schema
   , maybeCheck checkMaxLength (schemaMaxLength schema)
@@ -119,7 +122,7 @@ validateString schema str = allValid
     checkPattern (Pattern source compiled) = assert (match compiled $ unpack str) $ "string must match pattern " ++ show source
     checkFormat format = maybe valid validationError $ validateFormat format str
 
-validateNumber :: RecursiveSchema V3 ref -> Number -> SchemaValidator
+validateNumber :: Schema V3 ref -> Number -> SchemaValidator
 validateNumber schema num = allValid
   [ maybeCheck (checkMinimum $ schemaExclusiveMinimum schema) $ schemaMinimum schema
   , maybeCheck (checkMaximum $ schemaExclusiveMaximum schema) $ schemaMaximum schema
@@ -134,15 +137,15 @@ validateNumber schema num = allValid
       else assert (num <= m) $ "number must be less than or equal " ++ show m
     checkDivisibleBy devisor = assert (num `isDivisibleBy` devisor) $ "number must be devisible by " ++ show devisor
 
-validateObject :: RecursiveSchema V3 ref -> A.Object -> SchemaValidator
-validateObject schema obj = allValid
+validateObject :: Ord ref => Graph (Schema V3) ref -> Schema V3 ref -> A.Object -> SchemaValidator
+validateObject graph schema obj = allValid
   [ allValid $ map (uncurry checkKeyValue) (H.toList obj)
   , allValid $ map checkRequiredProperty requiredProperties
   ]
   where
     checkKeyValue k v = allValid
-      [ maybeCheck (flip validate v) property
-      , allValid $ map (flip validate v . snd) matchingPatternsProperties
+      [ maybeCheck (flip (validate graph) v) property
+      , allValid $ map (flip (validate graph) v . snd) matchingPatternsProperties
       , if (isNothing property && L.null matchingPatternsProperties)
         then checkAdditionalProperties (schemaAdditionalProperties schema)
         else valid
@@ -153,19 +156,19 @@ validateObject schema obj = allValid
         matchingPatternsProperties = filter (flip match (unpack k) . patternCompiled . fst) $ schemaPatternProperties schema
         checkAdditionalProperties ap = case ap of
           Choice1of2 b -> assert b $ "additional property " ++ unpack k ++ " is not allowed"
-          Choice2of2 s -> validate s v
+          Choice2of2 s -> validate graph s v
         checkDependencies deps = case deps of
           Choice1of2 props -> allValid $ flip map props $ \prop -> case H.lookup prop obj of
             Nothing -> validationError $ "property " ++ unpack k ++ " depends on property " ++ show prop
             Just _ -> valid
-          Choice2of2 depSchema -> validate depSchema (Object obj)
+          Choice2of2 depSchema -> validate graph depSchema (Object obj)
     requiredProperties = map fst . filter (schemaRequired . snd) . H.toList $ schemaProperties schema
     checkRequiredProperty key = case H.lookup key obj of
       Nothing -> validationError $ "required property " ++ unpack key ++ " is missing"
       Just _ -> valid
 
-validateArray :: RecursiveSchema V3 ref -> A.Array -> SchemaValidator
-validateArray schema arr = allValid
+validateArray :: Ord ref => Graph (Schema V3) ref -> Schema V3 ref -> A.Array -> SchemaValidator
+validateArray graph schema arr = allValid
   [ checkMinItems $ schemaMinItems schema
   , maybeCheck checkMaxItems $ schemaMaxItems schema
   , if schemaUniqueItems schema then checkUnique else valid
@@ -178,12 +181,12 @@ validateArray schema arr = allValid
     checkMaxItems m = assert (len <= m) $ "array must have at most " ++ show m ++ " items"
     checkUnique = assert (vectorUnique arr) "all array items must be unique"
     checkItems items = case items of
-      Choice1of2 s -> assert (V.all (isNothing . validate s) arr) "all items in the array must validate against the schema given in 'items'"
+      Choice1of2 s -> assert (V.all (isNothing . validate graph s) arr) "all items in the array must validate against the schema given in 'items'"
       Choice2of2 ss ->
         let additionalItems = drop (L.length ss) list
             checkAdditionalItems ai = case ai of
               Choice1of2 b -> assert (b || L.null additionalItems) $ "no additional items allowed"
-              Choice2of2 additionalSchema -> allValid $ map (validate additionalSchema) additionalItems
-        in allValid [ allValid $ zipWith validate ss list
+              Choice2of2 additionalSchema -> allValid $ map (validate graph additionalSchema) additionalItems
+        in allValid [ allValid $ zipWith (validate graph) ss list
                     , checkAdditionalItems $ schemaAdditionalItems schema
                     ]

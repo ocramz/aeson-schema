@@ -32,15 +32,6 @@ tests =
           Success schema -> do
             Just "http://json-schema.org/schema#" HU.@=? schemaId schema
             0 HU.@=? schemaMinItems schema
-  , testCase "followReferences" $ do
-      let a = TestFunctor 1 "b"
-      let b = TestFunctor 2 "a"
-      let m = M.fromList [("a" :: String, a), ("b", b)]
-      let m' = followReferences m
-      HU.assertBool "m' has the members 'a' and 'b'" $ "a" `M.member` m' && "b" `M.member` m'
-      case M.lookup "a" m' of
-        Just (TestFunctor 1 ("b", TupleFix (TestFunctor 2 ("a", TupleFix (TestFunctor 1 ("b", TupleFix (TestFunctor 2 _))))))) -> return ()
-        _ -> HU.assertFailure "didn't produce a mutually recursive data structure"
   , testCase "Foldable instance" $ do
       let schemaWithRef ref = empty { schemaDRef = Just ref }
       let schema = empty

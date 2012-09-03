@@ -13,6 +13,7 @@ import Data.Ratio ((%))
 import qualified Data.Aeson.Types
 import qualified Data.Attoparsec.Number
 import qualified Data.Vector
+import Data.Text (Text)
 import qualified Data.Text
 import qualified Data.Map as M
 
@@ -20,15 +21,15 @@ import Data.Aeson.Schema
 import Data.Aeson.Schema.Validator
 import Data.Aeson.Schema.Choice
 
-assertValid, assertInvalid :: RecursiveSchema V3 ref -> Value -> HU.Assertion
-assertValid sch inst = case validate sch inst of
+assertValid, assertInvalid :: Schema V3 Text -> Value -> HU.Assertion
+assertValid sch inst = case validate M.empty sch inst of
   Just e -> HU.assertFailure e
   Nothing -> return ()
-assertInvalid sch inst = case validate sch inst of
+assertInvalid sch inst = case validate M.empty sch inst of
   Just _ -> return ()
   Nothing -> HU.assertFailure "expected a validation error"
 
-parseSchema :: Value -> IO (RecursiveSchema V3 ref)
+parseSchema :: Value -> IO (Schema V3 Text)
 parseSchema v = case fromJSON v :: Result (Schema V3 String) of
   Error e -> HU.assertFailure e >> fail "invalid schema"
   Success schema -> return $ fmap (error "schema mustn't contain a $ref") schema
@@ -433,11 +434,11 @@ tests =
   , testCase "$ref" $ do
       let a = empty { schemaDRef = Just "b", schemaMinimum = Just 3 }
           b = empty { schemaType = [Choice1of2 NumberType], schemaMaximum = Just 2 }
-          m = M.fromList [("a" :: String, a), ("b", b)]
-          m' = followReferences m
-      case M.lookup "a" m' of
-        Nothing -> HU.assertFailure "followReferences"
-        Just a' -> do
-          assertValid a' (Number 1)
-          assertInvalid a' (Number 4)
+          graph = M.fromList [("a" :: String, a), ("b", b)]
+      case validate graph a (Number 1) of
+        Nothing -> return ()
+        Just e -> HU.assertFailure e
+      case validate graph a (Number 4) of
+        Nothing -> HU.assertFailure "4 should be invalid"
+        Just _ -> return ()
   ]

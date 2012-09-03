@@ -4,18 +4,16 @@ module Data.Aeson.Schema
   ( SchemaType (..)
   , Schema (..)
   , V3
-  , TupleFix (..)
-  , RecursiveSchema
+  , Graph
   , Pattern (..)
   , mkPattern
   , empty
-  , followReferences
   ) where
 
 import Prelude hiding (foldr, length)
 import Data.Foldable (Foldable (..), toList)
 import Data.Traversable (traverse)
-import Data.Function (fix, on)
+import Data.Function (on)
 import Data.Functor ((<$>))
 import Control.Applicative ((<*>))
 import Control.Arrow (second)
@@ -107,8 +105,7 @@ data Schema version ref = Schema
 
 data V3
 
-newtype TupleFix a b = TupleFix (a (b, TupleFix a b))
-type RecursiveSchema ver ref = Schema ver (ref, TupleFix (Schema ver) ref)
+type Graph f ref = M.Map ref (f ref)
 
 instance Functor (Schema version) where
   fmap f s = s
@@ -228,6 +225,3 @@ singleOrArray p v = (:[]) <$> p v
 
 parseSingleOrArray :: (FromJSON a) => Value -> Parser [a]
 parseSingleOrArray = singleOrArray parseJSON
-
-followReferences :: (Ord k, Functor f) => M.Map k (f k) -> M.Map k (f (k, TupleFix f k))
-followReferences input = fix $ \output -> fmap (\ref -> (ref, TupleFix (output M.! ref))) <$> input

@@ -6,17 +6,15 @@ module Data.Aeson.Schema.CodeGen
   ) where
 
 import Control.Monad (forM_, when)
-import Control.Arrow (first, second)
+import Control.Arrow (second)
 import Data.Function (on)
 import Data.Char (isAlphaNum, isLetter, toLower, toUpper)
 import Data.Attoparsec.Number (Number (..))
-import Control.Monad.Writer (WriterT, MonadWriter (..), runWriterT, execWriterT)
-import Control.Monad.State (StateT, MonadState (..), runStateT, evalStateT)
+import Control.Monad.RWS.Lazy (RWST (..), MonadReader (..), MonadWriter (..), MonadState (..))
 import qualified Control.Monad.Trans.Class as MT
 import Control.Applicative (Applicative (..), (<$>), (<*>), (<|>))
 import Language.Haskell.TH
 import Language.Haskell.TH.Syntax
---import Language.Haskell.TH.Ppr
 import Data.String (IsString (..))
 import Data.List (unzip4, nub)
 import Data.Monoid ((<>))
@@ -40,38 +38,37 @@ import Data.Aeson.Schema
 import Data.Aeson.Schema.Validator
 import Data.Aeson.Schema.Choice
 
-instance (Show (a (b, TupleFix a b)), Show b) => Show (TupleFix a b) where
-  show (TupleFix a) = "TupleFix " ++ show a
-
 
 type Code = [Either Text Dec]
 type StringSet = HS.HashSet String
+type SchemaGraph = Graph (Schema V3) Text
 
 newtype CodeGenM a = CodeGenM
-  { unCodeGenM :: StateT StringSet (WriterT Code Q) a
-  } deriving (Monad, Applicative, Functor, MonadWriter Code)
+  { unCodeGenM :: RWST SchemaGraph Code StringSet Q a
+  } deriving (Monad, Applicative, Functor, MonadReader SchemaGraph, MonadWriter Code, MonadState StringSet)
 
 instance Quasi CodeGenM where
-  qNewName s = CodeGenM $ do
+  qNewName s = do
     used <- get
     let free = head $ dropWhile (`HS.member` used) $ (if validName s then (s:) else id) $ map (\i -> s ++ "_" ++ show i) ([1..] :: [Int])
     put $ HS.insert free used
     return $ Name (mkOccName free) NameS
     where
       validName s = not (s `elem` ["", "_"])
-  qReport b = CodeGenM . MT.lift . MT.lift . report b
-  qRecover handler action = CodeGenM $ do
-    currState <- get 
-    ((a, s), w) <- MT.lift $ MT.lift $ (recover `on` (runWriterT . flip runStateT currState . unCodeGenM)) handler action
+  qReport b = CodeGenM . MT.lift . report b
+  qRecover (CodeGenM handler) (CodeGenM action) = do
+    graph <- ask
+    currState <- get
+    (a, s, w) <- CodeGenM $ MT.lift $ (recover `on` \m -> runRWST m graph currState) handler action
     put s
     tell w
     return a
-  qLookupName b = CodeGenM . MT.lift . MT.lift . (if b then lookupTypeName else lookupValueName)
-  qReify = CodeGenM . MT.lift . MT.lift . reify
-  qReifyInstances name = CodeGenM . MT.lift . MT.lift . reifyInstances name
-  qLocation = CodeGenM . MT.lift . MT.lift $ location
-  qRunIO = CodeGenM . MT.lift . MT.lift . runIO
-  qAddDependentFile = CodeGenM . MT.lift . MT.lift . addDependentFile
+  qLookupName b = CodeGenM . MT.lift . (if b then lookupTypeName else lookupValueName)
+  qReify = CodeGenM . MT.lift . reify
+  qReifyInstances name = CodeGenM . MT.lift . reifyInstances name
+  qLocation = CodeGenM . MT.lift $ location
+  qRunIO = CodeGenM . MT.lift . runIO
+  qAddDependentFile = CodeGenM . MT.lift . addDependentFile
 
 instance IsString Name where
   fromString = mkName
@@ -122,7 +119,7 @@ instance (Lift a, Lift b, Lift c) => Lift (Choice3 a b c) where
 instance Lift Pattern where
   lift (Pattern src _) = [| let Right p = mkPattern src in p |]
 
-instance Lift (RecursiveSchema V3 Text) where
+instance Lift (Schema V3 Text) where
   lift schema = recConE ''Schema
     [ field 'schemaType $ schemaType schema
     , field 'schemaProperties $ schemaProperties schema
@@ -152,10 +149,13 @@ instance Lift (RecursiveSchema V3 Text) where
     , field 'schemaDisallow $ schemaDisallow schema
     , field 'schemaExtends $ schemaExtends schema
     , field 'schemaId $ schemaId schema
-    , field 'schemaDRef $ fst <$> schemaDRef schema
+    , field 'schemaDRef $ schemaDRef schema
     , field 'schemaDSchema $ schemaDSchema schema
     ]
     where field name val = (name,) <$> lift val
+
+instance (Lift k, Lift v) => Lift (M.Map k v) where
+  lift m = [| M.fromList $(lift $ M.toList m) |]
 
 replaceHiddenModules :: Dec -> Dec
 replaceHiddenModules = everywhere $ mkT replaceModule 
@@ -187,9 +187,9 @@ getUsedModules = nub . concatMap (everything (++) ([] `mkQ` extractModule))
     extractModule :: Name -> [String]
     extractModule = maybeToList . nameModule
 
-generate :: M.Map Text (RecursiveSchema V3 Text) -> Q Code
-generate m = do
-  code <- execWriterT $ flip evalStateT HS.empty $ unCodeGenM $ generateTopLevel m
+generate :: Graph (Schema V3) Text -> Q Code
+generate graph = do
+  ((), _, code) <- runRWST (unCodeGenM generateTopLevel) graph HS.empty
   let code' = map (mapEither id replaceHiddenModules) code
   let mods = extraModules ++ getUsedModules (rights code')
   let imprts = map (\m -> "import " <> pack m) mods
@@ -199,12 +199,21 @@ generate m = do
     mapEither f _ (Left l) = Left (f l)
     mapEither _ f (Right r) = Right (f r)
 
-generateTopLevel :: M.Map Text (RecursiveSchema V3 Text) -> CodeGenM ()
-generateTopLevel m = forM_ (M.toList m) $ uncurry generateSchema
+generateTopLevel :: CodeGenM ()
+generateTopLevel = do
+  graph <- ask
+  graphN <- qNewName "graph"
+  when (nameBase graphN /= "graph") $ fail "name graph is already taken"
+  graphDecType <- runQ $ sigD graphN $ conT ''M.Map `appT` conT ''Text `appT` (conT ''Schema `appT` conT ''V3 `appT` conT ''Text)
+  graphDec <- runQ $ valD (varP graphN) (normalB $ lift graph) []
+  tell [Right graphDecType, Right graphDec]
+  forM_ (M.toList graph) $ uncurry generateSchema
 
-generateSchema :: Text -> RecursiveSchema V3 Text -> CodeGenM (TypeQ, ExpQ)
+generateSchema :: Text -> Schema V3 Text -> CodeGenM (TypeQ, ExpQ)
 generateSchema name schema = case schemaDRef schema of
-  Just (_, TupleFix otherSchema) -> generateSchema name otherSchema -- TODO
+  Just ref -> ask >>= \graph -> case M.lookup ref graph of
+    Nothing -> fail "couldn't find referenced schema"
+    Just referencedSchema -> generateSchema name referencedSchema -- TODO
   Nothing -> second wrap <$> case schemaType schema of
     [] -> fail "empty type"
     [Choice1of2 typ] -> generateSimpleType name typ
@@ -250,11 +259,11 @@ generateSchema name schema = case schemaDRef schema of
       [ match pat (normalB [| fail err |])[]
       , match wildP (normalB [| return () |]) []
       ]
-    disallowSchema sch = caseE [| validate $(lift sch) $(varE val) |]
+    disallowSchema sch = caseE [| validate $(varE $ mkName "graph") $(lift sch) $(varE val) |]
       [ match (conP 'Just [wildP]) (normalB [| return () |]) []
       , match wildP (normalB [| fail "disallowed" |]) []
       ]
-    checkExtends exts = noBindS $ doE $ flip map exts $ noBindS . \sch -> caseE [| validate $(lift sch) $(varE val) |]
+    checkExtends exts = noBindS $ doE $ flip map exts $ noBindS . \sch -> caseE [| validate $(varE $ mkName "graph") $(lift sch) $(varE val) |]
       [ match (conP 'Just [varP "err"]) (normalB [| fail $(varE "err") |]) []
       , match wildP (normalB [| return () |]) []
       ]
@@ -280,7 +289,7 @@ lambdaPattern pat body err = lamE [varP val] $ caseE (varE val)
 returnE :: ExpQ -> ExpQ
 returnE r = [| return $(r) |]
 
-generateString :: RecursiveSchema V3 Text -> CodeGenM (TypeQ, ExpQ)
+generateString :: Schema V3 Text -> CodeGenM (TypeQ, ExpQ)
 generateString schema = return (conT ''Text, code)
   where
     str = mkName "str"
@@ -301,7 +310,7 @@ generateString schema = return (conT ''Text, code)
                          (doE $ checkers ++ [noBindS [| return $(varE str) |]])
                          [| fail "not a string" |]
 
-generateNumber :: RecursiveSchema V3 Text -> CodeGenM (TypeQ, ExpQ)
+generateNumber :: Schema V3 Text -> CodeGenM (TypeQ, ExpQ)
 generateNumber schema = return (conT ''Number, code)
   where
     num = mkName "num"
@@ -309,7 +318,7 @@ generateNumber schema = return (conT ''Number, code)
                          (doE $ numberCheckers num schema ++ [noBindS [| return $(varE num) |]])
                          [| fail "not a number" |]
 
-generateInteger :: RecursiveSchema V3 Text -> CodeGenM (TypeQ, ExpQ)
+generateInteger :: Schema V3 Text -> CodeGenM (TypeQ, ExpQ)
 generateInteger schema = return (conT ''Integer, code)
   where
     num = mkName "num"
@@ -317,7 +326,7 @@ generateInteger schema = return (conT ''Integer, code)
                          (doE $ numberCheckers num schema ++ [noBindS [| return $(varE "i") |]])
                          [| fail "not an integer" |]
 
-numberCheckers :: Name -> RecursiveSchema V3 Text -> [StmtQ]
+numberCheckers :: Name -> Schema V3 Text -> [StmtQ]
 numberCheckers num schema = catMaybes
   [ checkMinimum (schemaExclusiveMinimum schema) <$> schemaMinimum schema
   , checkMaximum (schemaExclusiveMaximum schema) <$> schemaMaximum schema
@@ -358,7 +367,7 @@ firstUpper (c:cs) = toUpper c : cs
 firstLower "" = ""
 firstLower (c:cs) = toLower c : cs
 
-generateObject :: Text -> RecursiveSchema V3 Text -> CodeGenM (TypeQ, ExpQ)
+generateObject :: Text -> Schema V3 Text -> CodeGenM (TypeQ, ExpQ)
 generateObject name schema = do
   let propertiesList = HM.toList $ schemaProperties schema
   (propertyNames, propertyTypes, propertyParsers, defaultParsers) <- fmap unzip4 $ forM propertiesList $ \(fieldName, propertySchema) -> do
@@ -394,20 +403,20 @@ generateObject name schema = do
            Just (Choice1of2 props) -> forM_ props $ \prop -> if isNothing (HM.lookup prop $(varE obj))
              then fail $ unpack name ++ " requires property " ++ unpack prop
              else return ()
-           Just (Choice2of2 depSchema) -> case validate depSchema (Object $(varE obj)) of
+           Just (Choice2of2 depSchema) -> case validate $(varE $ mkName "graph") depSchema (Object $(varE obj)) of
              Nothing -> return ()
              Just err -> fail err
       |]
     checkAdditionalProperties _ (Choice1of2 True) = [| return () |]
     checkAdditionalProperties _ (Choice1of2 False) = [| fail "additional properties are not allowed" |]
-    checkAdditionalProperties value (Choice2of2 sch) = caseE [| validate $(lift sch) $(value) |]
+    checkAdditionalProperties value (Choice2of2 sch) = caseE [| validate $(varE $ mkName "graph") $(lift sch) $(value) |]
       [ match (conP 'Nothing []) (normalB [| return () |]) []
       , match (conP 'Just [varP "err"]) (normalB [| fail $(varE "err") |]) []
       ]
     checkPatternAndAdditionalProperties patterns additional = noBindS
       [| let items = HM.toList $(varE obj) in forM_ items $ \(name, value) -> do
            let matchingPatterns = filter (flip PCRE.match (unpack name) . patternCompiled . fst) $(lift patterns)
-           forM_ matchingPatterns $ \(_, sch) -> case validate sch value of
+           forM_ matchingPatterns $ \(_, sch) -> case validate $(varE $ mkName "graph") sch value of
              Nothing -> return ()
              Just err -> fail err
            let isAdditionalProperty = null matchingPatterns && not (name `elem` $(lift $ map fst $ HM.toList $ schemaProperties schema))
@@ -422,7 +431,7 @@ generateObject name schema = do
         else Just (checkPatternAndAdditionalProperties (schemaPatternProperties schema) (schemaAdditionalProperties schema))
       ]
 
-generateArray :: Text -> RecursiveSchema V3 Text -> CodeGenM (TypeQ, ExpQ)
+generateArray :: Text -> Schema V3 Text -> CodeGenM (TypeQ, ExpQ)
 generateArray name schema = case schemaItems schema of
   Nothing -> monomorphicArray (conT ''Value) (varE 'parseJSON)
   Just (Choice1of2 itemsSchema) -> do
@@ -470,11 +479,11 @@ generateArray name schema = case schemaItems schema of
       , if schemaUniqueItems schema then Just checkUnique else Nothing
       ]
 
-generateAny :: RecursiveSchema V3 Text -> CodeGenM (TypeQ, ExpQ)
+generateAny :: Schema V3 Text -> CodeGenM (TypeQ, ExpQ)
 generateAny schema = return (conT ''Value, code)
   where
     val = mkName "val"
-    code = lamE [varP val] $ caseE [| validate $(lift schema) $(varE val) |]
+    code = lamE [varP val] $ caseE [| validate $(varE $ mkName "graph") $(lift schema) $(varE val) |]
       [ match (conP 'Nothing []) (normalB [| return $(varE val) |]) []
       , match (conP 'Just [varP "err"]) (normalB [| fail $(varE "err") |]) []
       ]
