@@ -33,6 +33,7 @@ import Data.Aeson
 import Data.Aeson.Types (Parser, parse)
 import Data.Generics (everywhere, mkT, everything, mkQ)
 
+import Data.Aeson.TH.Lift () -- Lift instances for Aeson values and common data types
 import Data.Aeson.Schema.Helpers
 import Data.Aeson.Schema
 import Data.Aeson.Schema.Validator
@@ -73,16 +74,6 @@ instance Quasi CodeGenM where
 instance IsString Name where
   fromString = mkName
 
-instance Lift Text where
-  lift txt = [| pack $(lift (unpack txt)) |]
-
-instance Lift Double where
-  lift d = [| fromRational $(litE . rationalL . toRational $ d) :: Double |]
-
-instance Lift Number where
-  lift (I i) = [| I i |]
-  lift (D d) = [| D d |]
-
 instance Lift SchemaType where
   lift StringType  = [| StringType |]
   lift NumberType  = [| NumberType |]
@@ -92,20 +83,6 @@ instance Lift SchemaType where
   lift ArrayType   = [| ArrayType |]
   lift NullType    = [| NullType |]
   lift AnyType     = [| AnyType |]
-
-instance (Lift k, Lift v) => Lift (HM.HashMap k v) where
-  lift hm = [| HM.fromList $(lift (HM.toList hm)) |]
-
-instance (Lift a) => Lift (V.Vector a) where
-  lift vec = [| V.fromList $(lift (V.toList vec)) |]
-
-instance Lift Value where
-  lift (Object o) = [| Object o |]
-  lift (Array a)  = [| Array a |]
-  lift (String t) = [| String t |]
-  lift (Number n) = [| Number n |]
-  lift (Bool b)   = [| Bool b |]
-  lift Null       = [| Null |]
 
 instance (Lift a, Lift b) => Lift (Choice2 a b) where
   lift (Choice1of2 a) = [| Choice1of2 a |]
