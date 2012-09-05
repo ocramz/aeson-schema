@@ -2,7 +2,11 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving, TemplateHaskell, TupleSections, FlexibleInstances, FlexibleContexts, UndecidableInstances #-}
 
 module Data.Aeson.Schema.CodeGen
-  ( generate
+  ( Declaration (..)
+  , Code
+  , generate
+  , generateTH
+  , generateModule
   ) where
 
 import Control.Monad (forM_, when)
@@ -10,19 +14,20 @@ import Control.Arrow (second)
 import Data.Function (on)
 import Data.Char (isAlphaNum, isLetter, toLower, toUpper)
 import Data.Attoparsec.Number (Number (..))
-import Control.Monad.RWS.Lazy (RWST (..), MonadReader (..), MonadWriter (..), MonadState (..))
+import Control.Monad.RWS.Lazy (RWST (..), MonadReader (..), MonadWriter (..), MonadState (..), evalRWST)
 import qualified Control.Monad.Trans.Class as MT
 import Control.Applicative (Applicative (..), (<$>), (<*>), (<|>))
 import Language.Haskell.TH
 import Language.Haskell.TH.Syntax
+import Language.Haskell.TH.Ppr (pprint)
 import Data.String (IsString (..))
 import Data.List (unzip4, nub)
 import Data.Monoid ((<>))
 import Data.Either (rights)
-import Data.Text (Text, pack, unpack)
 import Data.Maybe (catMaybes, isNothing, maybeToList)
-import qualified Data.Vector as V
+import Data.Text (Text, pack, unpack)
 import qualified Data.Text as T
+import qualified Data.Vector as V
 import qualified Data.Map as M
 import qualified Data.HashMap.Lazy as HM
 import qualified Data.HashSet as HS
@@ -40,7 +45,11 @@ import Data.Aeson.Schema.Validator
 import Data.Aeson.Schema.Choice
 
 
-type Code = [Either Text Dec]
+data Declaration = Declaration Dec (Maybe Text)
+                 | Comment Text
+                 deriving (Show, Eq)
+type Code = [Declaration]
+
 type StringSet = HS.HashSet String
 type SchemaGraph = Graph (Schema V3) Text
 
@@ -165,16 +174,28 @@ getUsedModules = nub . concatMap (everything (++) ([] `mkQ` extractModule))
     extractModule = maybeToList . nameModule
 
 generate :: Graph (Schema V3) Text -> Q Code
-generate graph = do
-  ((), _, code) <- runRWST (unCodeGenM generateTopLevel) graph HS.empty
-  let code' = map (mapEither id replaceHiddenModules) code
-  let mods = extraModules ++ getUsedModules (rights code')
+generate graph = snd <$> evalRWST (unCodeGenM generateTopLevel) graph HS.empty
+
+getDecs :: Code -> [Dec]
+getDecs = catMaybes . map getDec
+  where getDec (Declaration dec _) = Just dec
+        getDec _ = Nothing
+
+generateTH :: Graph (Schema V3) Text -> Q [Dec]
+generateTH = fmap getDecs . generate
+
+generateModule :: Text -> Graph (Schema V3) Text -> Q Text
+generateModule modName graph = do
+  code <- map rewrite <$> generate graph
+  let mods = extraModules ++ getUsedModules (getDecs code)
   let imprts = map (\m -> "import " <> pack m) mods
-  return $ map Left imprts ++ code'
+  return $ T.concat $ ["module " <> modName <> " where"] ++ imprts ++ map render code
   where
-    mapEither :: (a1 -> a2) -> (b1 -> b2) -> Either a1 b1 -> Either a2 b2
-    mapEither f _ (Left l) = Left (f l)
-    mapEither _ f (Right r) = Right (f r)
+    rewrite (Declaration dec text) = Declaration (replaceHiddenModules dec) text
+    rewrite a = a
+    render (Declaration _ (Just text)) = text
+    render (Declaration dec Nothing)   = pack (pprint dec)
+    render (Comment comment)           = T.unlines $ map (\line -> "-- " <> line) $ T.lines comment
 
 generateTopLevel :: CodeGenM ()
 generateTopLevel = do
@@ -183,7 +204,7 @@ generateTopLevel = do
   when (nameBase graphN /= "graph") $ fail "name graph is already taken"
   graphDecType <- runQ $ sigD graphN $ conT ''M.Map `appT` conT ''Text `appT` (conT ''Schema `appT` conT ''V3 `appT` conT ''Text)
   graphDec <- runQ $ valD (varP graphN) (normalB $ lift graph) []
-  tell [Right graphDecType, Right graphDec]
+  tell [Declaration graphDecType Nothing, Declaration graphDec Nothing]
   forM_ (M.toList graph) $ uncurry generateSchema
 
 generateSchema :: Text -> Schema V3 Text -> CodeGenM (TypeQ, ExpQ)
@@ -262,9 +283,6 @@ lambdaPattern pat body err = lamE [varP val] $ caseE (varE val)
   , match wildP (normalB err) []
   ]
   where val = mkName "val"
-
-returnE :: ExpQ -> ExpQ
-returnE r = [| return $(r) |]
 
 generateString :: Schema V3 Text -> CodeGenM (TypeQ, ExpQ)
 generateString schema = return (conT ''Text, code)
@@ -370,7 +388,7 @@ generateObject name schema = do
         , clause [wildP] (normalB [| fail "not an object" |]) []
         ]
     ]
-  tell [Right dataDec, Right fromJSONInst]
+  tell [Declaration dataDec Nothing, Declaration fromJSONInst Nothing]
   return (typ, [| parseJSON |])
   where
     obj = mkName "obj"

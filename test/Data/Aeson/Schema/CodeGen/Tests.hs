@@ -35,7 +35,7 @@ import Language.Haskell.TH (Dec, runQ)
 import Language.Haskell.TH.Ppr (pprint)
 
 import Data.Aeson.Schema.Choice
-import Data.Aeson.Schema.CodeGen (generate)
+import Data.Aeson.Schema.CodeGen (generateModule)
 import Data.Aeson.Schema.Validator (validate)
 import Data.Aeson.Schema.Helpers (formatValidators)
 
@@ -176,14 +176,14 @@ tests =
 
 typecheckGenerate :: Schema V3 Text -> Property
 typecheckGenerate schema = morallyDubiousIOProperty $ do
-  let m = M.fromList [("A", fmap undefined schema)]
-  code <- (Left "module CustomSchema where" :) <$> runQ (generate m)
+  let m = M.fromList [("A", schema)]
+  code <- runQ $ generateModule "CustomSchema" m
   typecheck code
   return True
 
-typecheck :: [Either Text Dec] -> IO ()
+typecheck :: Text -> IO ()
 typecheck code = withSystemTempFile "CustomSchema.hs" $ \path handle -> do
-  forM_ code $ either (TIO.hPutStrLn handle) (hPutStrLn handle . pprint)
+  TIO.hPutStrLn handle code
   hClose handle
   defaultErrorHandler defaultLogAction $ runGhc (Just libdir) $ do
     dflags <- getSessionDynFlags
