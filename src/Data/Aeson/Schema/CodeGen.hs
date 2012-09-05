@@ -189,7 +189,7 @@ generateModule modName graph = do
   code <- map rewrite <$> generate graph
   let mods = extraModules ++ getUsedModules (getDecs code)
   let imprts = map (\m -> "import " <> pack m) mods
-  return $ T.concat $ ["module " <> modName <> " where"] ++ imprts ++ map render code
+  return $ T.unlines $ ["module " <> modName <> " where"] ++ imprts ++ map render code
   where
     rewrite (Declaration dec text) = Declaration (replaceHiddenModules dec) text
     rewrite a = a
