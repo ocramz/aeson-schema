@@ -9,6 +9,8 @@ import Test.Framework.Options (TestOptions' (..))
 import Test.Framework.Providers.QuickCheck2
 import Test.QuickCheck
 import Test.QuickCheck.Property (morallyDubiousIOProperty)
+import Test.Framework.Providers.HUnit
+import qualified Test.HUnit as HU
 
 import GHC
 import GHC.Paths (libdir)
@@ -19,7 +21,6 @@ import StringBuffer (stringToStringBuffer)
 import Control.Applicative (pure, (<$>), (<*>))
 import Data.Char (isAscii, isPrint)
 import Control.Monad (liftM2, (>=>), forM_)
-import Data.Aeson.Schema
 import Data.Hashable (Hashable)
 import qualified Data.HashMap.Lazy as HM
 import Data.Text (Text, pack, unpack)
@@ -34,10 +35,13 @@ import Data.Attoparsec.Number (Number (..))
 import Language.Haskell.TH (Dec, runQ)
 import Language.Haskell.TH.Ppr (pprint)
 
+import Data.Aeson.Schema
 import Data.Aeson.Schema.Choice
 import Data.Aeson.Schema.CodeGen (generateModule)
 import Data.Aeson.Schema.Validator (validate)
 import Data.Aeson.Schema.Helpers (formatValidators)
+
+import Data.Aeson.Schema.Examples (examples)
 
 instance Arbitrary Text where
   arbitrary = pack <$> arbitrary
@@ -172,31 +176,67 @@ instance (Eq a) => Arbitrary (Schema V3 a) where
 tests :: [Test]
 tests =
   [ testProperty "generated code typechecks" typecheckGenerate
+  , testGroup "examples" testExamples
+  , testCase "1-tuple" $ do
+      let
+        schema = empty
+          { schemaType = [Choice1of2 ArrayType]
+          , schemaItems = Just $ Choice2of2 [empty { schemaType = [Choice1of2 NumberType] }]
+          }
+        graph = M.singleton "A" schema
+      (code, _) <- runQ $ generateModule "TestOneTuple" graph
+      typecheck code
+      return ()
   ]
 
 typecheckGenerate :: Schema V3 Text -> Property
 typecheckGenerate schema = morallyDubiousIOProperty $ do
-  let m = M.fromList [("A", schema)]
-  code <- runQ $ generateModule "CustomSchema" m
+  let graph = M.singleton "A" schema
+  (code, _) <- runQ $ generateModule "CustomSchema" graph
+  TIO.putStrLn code
   typecheck code
   return True
 
+loadInGhc :: Text -> (ModuleName -> Ghc ()) -> IO ()
+loadInGhc code action = case maybeName of
+  Nothing -> fail "couldn't find module name"
+  Just name -> do
+    withSystemTempFile (unpack name ++ ".hs") $ \path handle -> do
+      TIO.hPutStrLn handle code
+      hClose handle
+      defaultErrorHandler defaultLogAction $ runGhc (Just libdir) $ do
+        dflags <- getSessionDynFlags
+        setSessionDynFlags dflags
+        let
+          modName = mkModuleName (unpack name)
+          target = Target
+            { targetId = TargetFile path Nothing
+            , targetAllowObjCode = False
+            , targetContents = Nothing
+            }
+        setTargets [target]
+        load LoadAllTargets
+        action modName
+  where
+    maybeName = findName (T.lines code)
+    findName (l:ls) = case T.words l of
+      ("module":n:_) -> Just n
+      _ -> findName ls
+
 typecheck :: Text -> IO ()
-typecheck code = withSystemTempFile "CustomSchema.hs" $ \path handle -> do
-  TIO.hPutStrLn handle code
-  hClose handle
-  defaultErrorHandler defaultLogAction $ runGhc (Just libdir) $ do
-    dflags <- getSessionDynFlags
-    setSessionDynFlags dflags
-    let modName = mkModuleName "CustomSchema"
-    let target = Target 
-          { targetId = TargetFile path Nothing
-          , targetAllowObjCode = False 
-          , targetContents = Nothing
-          }
-    setTargets [target]
-    load LoadAllTargets
-    modSummary <- getModSummary modName
-    parsedModule <- parseModule modSummary
-    _ <- typecheckModule parsedModule
-    return ()
+typecheck code = loadInGhc code $ \modName -> do
+  modSummary <- getModSummary modName
+  parsedModule <- parseModule modSummary
+  _ <- typecheckModule parsedModule
+  return ()
+
+testExamples :: [Test]
+testExamples = examples testCase assertValid assertInvalid
+  where
+    assertValid = assertValidates True
+    assertInvalid = assertValidates False
+    assertValidates isValid graph schema value = do
+      let graph' = if M.null graph then M.singleton "a" schema else graph
+      (code, typeMap) <- runQ $ generateModule "TestSchema" graph'
+      loadInGhc code $ \modName -> do
+        return ()

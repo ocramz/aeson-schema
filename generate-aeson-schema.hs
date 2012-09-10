@@ -39,7 +39,7 @@ main = do
     A.Error str -> fail str
     A.Success schema -> do
       let m = M.fromList [(pack "A", schema)]
-      code <- runQ $ generateModule (pack $ modName args) m
+      (code, _) <- runQ $ generateModule (pack $ modName args) m
       TIO.putStrLn code
   where
     iResultM :: (Monad m) => Result a -> m a

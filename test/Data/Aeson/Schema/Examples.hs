@@ -45,7 +45,7 @@ examples testCase assertValid' assertInvalid' =
         "type": "number",
         "minimum": 3,
         "exclusiveMinimum": true
-      }]
+      } |]
       assertInvalid schemaExclusiveMinimum3 [aesonLitQQ| 2 |]
       assertInvalid schemaExclusiveMinimum3 [aesonLitQQ| 3 |]
       assertValid schemaExclusiveMinimum3 [aesonLitQQ| 4 |]
@@ -57,7 +57,7 @@ examples testCase assertValid' assertInvalid' =
         "type": "number",
         "maximum": 3,
         "exclusiveMaximum": true
-      }]
+      } |]
       assertValid schemaExclusiveMaximum3 [aesonLitQQ| 2 |]
       assertInvalid schemaExclusiveMaximum3 [aesonLitQQ| 3 |]
       assertInvalid schemaExclusiveMaximum3 [aesonLitQQ| 4 |]

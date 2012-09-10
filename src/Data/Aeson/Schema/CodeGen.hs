@@ -1,5 +1,5 @@
 {-# OPTIONS_GHC -fno-warn-orphans #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving, TemplateHaskell, TupleSections, FlexibleInstances, FlexibleContexts, UndecidableInstances #-}
+{-# LANGUAGE TemplateHaskell, TupleSections, FlexibleInstances, GeneralizedNewtypeDeriving #-}
 
 module Data.Aeson.Schema.CodeGen
   ( Declaration (..)
@@ -10,9 +10,10 @@ module Data.Aeson.Schema.CodeGen
   ) where
 
 import Control.Monad (forM_, when)
-import Control.Arrow (second)
+import Control.Arrow (first, second)
 import Data.Function (on)
 import Data.Char (isAlphaNum, isLetter, toLower, toUpper)
+import Data.Tuple (swap)
 import Data.Attoparsec.Number (Number (..))
 import Control.Monad.RWS.Lazy (RWST (..), MonadReader (..), MonadWriter (..), MonadState (..), evalRWST)
 import qualified Control.Monad.Trans.Class as MT
@@ -21,7 +22,7 @@ import Language.Haskell.TH
 import Language.Haskell.TH.Syntax
 import Language.Haskell.TH.Ppr (pprint)
 import Data.String (IsString (..))
-import Data.List (unzip4, nub)
+import Data.List (unzip4, nub, sort)
 import Data.Monoid ((<>))
 import Data.Either (rights)
 import Data.Maybe (catMaybes, isNothing, maybeToList)
@@ -64,7 +65,15 @@ instance Quasi CodeGenM where
     put $ HS.insert free used
     return $ Name (mkOccName free) NameS
     where
-      validName s = not (s `elem` ["", "_"])
+      -- taken from http://www.haskell.org/haskellwiki/Keywords
+      haskellKeywords = HS.fromList
+        [ "as", "case", "of", "class", "data", "data family", "data instance"
+        , "default", "deriving", "deriving instance", "do", "forall", "foreign"
+        , "hiding", "if", "then", "else", "import", "infix", "infixl", "infixr"
+        , "instance", "let", "in", "mdo", "module", "newtype", "proc"
+        , "qualified", "rec", "type", "type family", "type instance", "where"
+        ]
+      validName s = not (s `elem` ["", "_"] || s `HS.member` haskellKeywords)
   qReport b = CodeGenM . MT.lift . report b
   qRecover (CodeGenM handler) (CodeGenM action) = do
     graph <- ask
@@ -79,9 +88,6 @@ instance Quasi CodeGenM where
   qLocation = CodeGenM . MT.lift $ location
   qRunIO = CodeGenM . MT.lift . runIO
   qAddDependentFile = CodeGenM . MT.lift . addDependentFile
-
-instance IsString Name where
-  fromString = mkName
 
 instance Lift SchemaType where
   lift StringType  = [| StringType |]
@@ -173,39 +179,56 @@ getUsedModules = nub . concatMap (everything (++) ([] `mkQ` extractModule))
     extractModule :: Name -> [String]
     extractModule = maybeToList . nameModule
 
-generate :: Graph (Schema V3) Text -> Q Code
-generate graph = snd <$> evalRWST (unCodeGenM generateTopLevel) graph HS.empty
+generate :: Graph (Schema V3) Text -> Q (Code, M.Map Text Type)
+generate graph = swap <$> evalRWST (unCodeGenM generateTopLevel) graph HS.empty
 
 getDecs :: Code -> [Dec]
 getDecs = catMaybes . map getDec
   where getDec (Declaration dec _) = Just dec
         getDec _ = Nothing
 
-generateTH :: Graph (Schema V3) Text -> Q [Dec]
-generateTH = fmap getDecs . generate
+generateTH :: Graph (Schema V3) Text -> Q ([Dec], M.Map Text Type)
+generateTH = fmap (first getDecs) . generate
 
-generateModule :: Text -> Graph (Schema V3) Text -> Q Text
-generateModule modName graph = do
-  code <- map rewrite <$> generate graph
-  let mods = extraModules ++ getUsedModules (getDecs code)
-  let imprts = map (\m -> "import " <> pack m) mods
-  return $ T.unlines $ ["module " <> modName <> " where"] ++ imprts ++ map render code
+generateModule :: Text -> Graph (Schema V3) Text -> Q (Text, M.Map Text Type)
+generateModule modName = fmap (first $ renderCode . map rewrite) . generate
   where
+    renderCode :: Code -> Text
+    renderCode code = T.unlines $ [modDec] ++ imprts ++ map renderDeclaration code
+      where
+        mods = sort $ extraModules ++ getUsedModules (getDecs code)
+        imprts = map (\m -> "import " <> pack m) mods
+        modDec = "module " <> modName <> " where"
+    rewrite :: Declaration -> Declaration
     rewrite (Declaration dec text) = Declaration (replaceHiddenModules dec) text
     rewrite a = a
-    render (Declaration _ (Just text)) = text
-    render (Declaration dec Nothing)   = pack (pprint dec)
-    render (Comment comment)           = T.unlines $ map (\line -> "-- " <> line) $ T.lines comment
+    renderDeclaration :: Declaration -> Text
+    renderDeclaration (Declaration _ (Just text)) = text
+    renderDeclaration (Declaration dec Nothing)   = pack (pprint dec)
+    renderDeclaration (Comment comment)           = T.unlines $ map (\line -> "-- " <> line) $ T.lines comment
 
-generateTopLevel :: CodeGenM ()
+generateTopLevel :: CodeGenM (M.Map Text Type)
 generateTopLevel = do
   graph <- ask
   graphN <- qNewName "graph"
   when (nameBase graphN /= "graph") $ fail "name graph is already taken"
-  graphDecType <- runQ $ sigD graphN $ conT ''M.Map `appT` conT ''Text `appT` (conT ''Schema `appT` conT ''V3 `appT` conT ''Text)
+  graphDecType <- runQ $ sigD graphN [t| Graph (Schema V3) Text |]
   graphDec <- runQ $ valD (varP graphN) (normalB $ lift graph) []
   tell [Declaration graphDecType Nothing, Declaration graphDec Nothing]
-  forM_ (M.toList graph) $ uncurry generateSchema
+  fmap M.fromList $ forM (M.toList graph) $ \(name, schema) -> do
+    (typQ, exprQ) <- generateSchema name schema
+    typ <- runQ typQ
+    (name,) <$> case typ of
+      ConT _ -> return typ
+      _      -> do
+        newtypeName <- qNewName $ firstUpper $ unpack name
+        let newtypeCon = normalC newtypeName [strictType notStrict (return typ)]
+        newtypeDec <- runQ $ newtypeD (cxt []) newtypeName [] newtypeCon []
+        fromJSONInst <- runQ $ instanceD (cxt []) (conT ''FromJSON `appT` conT newtypeName)
+          [ valD (varP $ mkName "parseJSON") (normalB [| fmap $(conE newtypeName) . $exprQ |]) []
+          ]
+        tell [Declaration newtypeDec Nothing, Declaration fromJSONInst Nothing]
+        return $ ConT newtypeName
 
 generateSchema :: Text -> Schema V3 Text -> CodeGenM (TypeQ, ExpQ)
 generateSchema name schema = case schemaDRef schema of
@@ -262,7 +285,7 @@ generateSchema name schema = case schemaDRef schema of
       , match wildP (normalB [| fail "disallowed" |]) []
       ]
     checkExtends exts = noBindS $ doE $ flip map exts $ noBindS . \sch -> caseE [| validate $(varE $ mkName "graph") $(lift sch) $(varE val) |]
-      [ match (conP 'Just [varP "err"]) (normalB [| fail $(varE "err") |]) []
+      [ match (conP 'Just [varP $ mkName "err"]) (normalB [| fail $(varE $ mkName "err") |]) []
       , match wildP (normalB [| return () |]) []
       ]
     checkers = catMaybes
@@ -291,8 +314,8 @@ generateString schema = return (conT ''Text, code)
     checkMinLength l = assertStmt [| T.length $(varE str) >= l |] $ "string must have at least " ++ show l ++ " characters"
     checkMaxLength l = assertStmt [| T.length $(varE str) <= l |] $ "string must have at most " ++ show l ++ " characters"
     checkPattern (Pattern p _) = noBindS $ doE
-      [ bindS (varP "regex") [| PCRE.makeRegexM $(lift (T.unpack p)) |]
-      , assertStmt [| PCRE.match ($(varE "regex") :: Regex) (unpack $(varE str)) |] $ "string must match pattern " ++ show p
+      [ bindS (varP $ mkName "regex") [| PCRE.makeRegexM $(lift (T.unpack p)) |]
+      , assertStmt [| PCRE.match ($(varE $ mkName "regex") :: Regex) (unpack $(varE str)) |] $ "string must match pattern " ++ show p
       ]
     checkFormat format = noBindS [| maybe (return ()) fail (validateFormat $(lift format) $(varE str)) |]
     checkers = catMaybes
@@ -317,8 +340,8 @@ generateInteger :: Schema V3 Text -> CodeGenM (TypeQ, ExpQ)
 generateInteger schema = return (conT ''Integer, code)
   where
     num = mkName "num"
-    code = lambdaPattern (conP 'Number [asP num $ conP "I" [varP "i"]])
-                         (doE $ numberCheckers num schema ++ [noBindS [| return $(varE "i") |]])
+    code = lambdaPattern (conP 'Number [asP num $ conP 'I [varP $ mkName "i"]])
+                         (doE $ numberCheckers num schema ++ [noBindS [| return $(varE $ mkName "i") |]])
                          [| fail "not an integer" |]
 
 numberCheckers :: Name -> Schema V3 Text -> [StmtQ]
@@ -377,7 +400,7 @@ generateObject name schema = do
       Nothing -> return $ if schemaRequired propertySchema
         then (propertyName, typ, [| maybe (fail $(lift $ "required property " ++ unpack fieldName ++ " missing")) $expr $lookupProperty |], Nothing)
         else (propertyName, conT ''Maybe `appT` typ, [| traverse $expr $lookupProperty |], Nothing)
-  conName <- qNewName $ unpack name
+  conName <- qNewName $ firstUpper $ unpack name
   let typ = conT conName
   let dataCon = recC conName $ zipWith (\name typ -> (name,NotStrict,) <$> typ) propertyNames propertyTypes
   dataDec <- runQ $ dataD (cxt []) conName [] [dataCon] []
@@ -406,7 +429,7 @@ generateObject name schema = do
     checkAdditionalProperties _ (Choice1of2 False) = [| fail "additional properties are not allowed" |]
     checkAdditionalProperties value (Choice2of2 sch) = caseE [| validate $(varE $ mkName "graph") $(lift sch) $(value) |]
       [ match (conP 'Nothing []) (normalB [| return () |]) []
-      , match (conP 'Just [varP "err"]) (normalB [| fail $(varE "err") |]) []
+      , match (conP 'Just [varP $ mkName "err"]) (normalB [| fail $(varE $ mkName "err") |]) []
       ]
     checkPatternAndAdditionalProperties patterns additional = noBindS
       [| let items = HM.toList $(varE obj) in forM_ items $ \(name, value) -> do
@@ -436,27 +459,33 @@ generateArray name schema = case schemaItems schema of
     let names = map (\i -> name <> "Item" <> pack (show i)) ([0..] :: [Int])
     items <- sequence $ zipWith generateSchema names itemSchemas
     additionalItems <- case schemaAdditionalItems schema of
-      Choice1of2 b -> return $ Choice2of3 b
-      Choice2of2 sch -> Choice3of3 <$> generateSchema (name <> "AdditionalItems") sch
+      Choice1of2 b -> return $ Choice1of2 b
+      Choice2of2 sch -> Choice2of2 <$> generateSchema (name <> "AdditionalItems") sch
     tupleArray items additionalItems
   where
-    tupleArray :: [(TypeQ, ExpQ)] -> Choice3 Text Bool (TypeQ, ExpQ) -> CodeGenM (TypeQ, ExpQ)
-    tupleArray items additionalItems = return (typeWithAdditional, code $ additionalCheckers ++ [noBindS parserWithAdditional])
+    tupleArray :: [(TypeQ, ExpQ)] -> Choice2 Bool (TypeQ, ExpQ) -> CodeGenM (TypeQ, ExpQ)
+    tupleArray items additionalItems = return (tupleType, code $ additionalCheckers ++ [noBindS tupleParser])
       where
         items' = flip map (zip [0..] items) $ \(i, (itemType, itemParser)) ->
           let simpleParser = [| $(itemParser) (V.unsafeIndex $(varE arr) i) |]
           in if i < schemaMinItems schema
              then (itemType, simpleParser)
              else (conT ''Maybe `appT` itemType, [| if V.length $(varE arr) > i then Just <$> $(simpleParser) else return Nothing|])
-        (itemTypes, itemParsers) = unzip items'
-        tupleType = foldl appT (tupleT tupleLen) itemTypes
-        tupleParser = foldl (\parser itemParser -> [| $(parser) <*> $(itemParser) |]) [| pure $(conE $ tupleDataName tupleLen) |] itemParsers
-        (tupleLen, additionalCheckers, typeWithAdditional, parserWithAdditional) = case additionalItems of
-          Choice1of3 _ -> error "not implemented"
-          Choice2of3 b -> if b then (length items', [], tupleType, tupleParser)
-                               else (length items', [assertStmt [| V.length $(varE arr) <= $(lift $ length items') |] "no additional items allowed"], tupleType, tupleParser)
-          Choice3of3 (additionalType, additionalParser) ->
-            (length items' + 1, [], tupleType `appT` (listT `appT` additionalType), [| $(tupleParser) <*> mapM $(additionalParser) (V.toList $ V.drop $(lift $ length items') $(varE arr)) |])
+        (additionalCheckers, maybeAdditionalTypeAndParser) = case additionalItems of
+          Choice1of2 b -> if b
+            then ([], Nothing)
+            else ([assertStmt [| V.length $(varE arr) <= $(lift $ length items') |] "no additional items allowed"], Nothing)
+          Choice2of2 (additionalType, additionalParser) ->
+            ( []
+            , Just (listT `appT` additionalType, [| mapM $(additionalParser) (V.toList $ V.drop $(lift $ length items') $(varE arr)) |])
+            )
+        items'' = items' ++ maybeToList maybeAdditionalTypeAndParser
+        (itemTypes, itemParsers) = unzip items''
+        (tupleType, tupleParser) = case items'' of
+          [(itemType, itemParser)] -> (itemType, itemParser)
+          _ -> foldl (\(typ, parser) (itemType, itemParser) -> (typ `appT` itemType, [| $(parser) <*> $(itemParser) |]))
+                     (tupleT $ length items'', [| pure $(conE $ tupleDataName $ length items'') |])
+                     items''
 
     monomorphicArray :: TypeQ -> ExpQ -> CodeGenM (TypeQ, ExpQ)
     monomorphicArray itemType itemCode = return (listT `appT` itemType, code [noBindS [| mapM $(itemCode) (V.toList $(varE arr)) |]])
@@ -480,5 +509,5 @@ generateAny schema = return (conT ''Value, code)
     val = mkName "val"
     code = lamE [varP val] $ caseE [| validate $(varE $ mkName "graph") $(lift schema) $(varE val) |]
       [ match (conP 'Nothing []) (normalB [| return $(varE val) |]) []
-      , match (conP 'Just [varP "err"]) (normalB [| fail $(varE "err") |]) []
+      , match (conP 'Just [varP $ mkName "err"]) (normalB [| fail $(varE $ mkName "err") |]) []
       ]
