@@ -4,7 +4,6 @@ module Data.Aeson.LitQQ
   ( aesonLitQQ
   ) where
 
---import Data.Aeson (Value)
 import Data.Aeson.Parser (value')
 import Language.Haskell.TH (ExpQ)
 import Language.Haskell.TH.Syntax (lift)

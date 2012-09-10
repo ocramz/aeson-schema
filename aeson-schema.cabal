@@ -75,6 +75,5 @@ test-suite tests
                        test-framework-quickcheck2 >= 0.2.12.2 && < 0.3,
                        QuickCheck >= 2.4.2 && < 2.5,
                        bytestring,
-                       ghc,
-                       ghc-paths,
+                       hint,
                        temporary

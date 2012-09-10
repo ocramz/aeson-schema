@@ -1,4 +1,4 @@
-{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE FlexibleInstances, ExistentialQuantification, RankNTypes, ScopedTypeVariables, ImpredicativeTypes #-}
 
 module Data.Aeson.Schema.CodeGen.Tests
   ( tests
@@ -7,20 +7,19 @@ module Data.Aeson.Schema.CodeGen.Tests
 import Test.Framework
 import Test.Framework.Options (TestOptions' (..))
 import Test.Framework.Providers.QuickCheck2
-import Test.QuickCheck
-import Test.QuickCheck.Property (morallyDubiousIOProperty)
+import Test.QuickCheck hiding (Result (..))
+import Test.QuickCheck.Property (morallyDubiousIOProperty, Result (..), succeeded, failed)
 import Test.Framework.Providers.HUnit
 import qualified Test.HUnit as HU
 
-import GHC
-import GHC.Paths (libdir)
-import DynFlags (defaultLogAction)
 import System.IO (hPutStrLn, hClose)
 import System.IO.Temp (withSystemTempFile)
-import StringBuffer (stringToStringBuffer)
 import Control.Applicative (pure, (<$>), (<*>))
 import Data.Char (isAscii, isPrint)
-import Control.Monad (liftM2, (>=>), forM_)
+import Control.Monad (liftM2, (>=>), forM_, forever)
+import Control.Concurrent (forkIO)
+import Control.Concurrent.MVar (newEmptyMVar, putMVar, takeMVar)
+import Control.Concurrent.Chan (Chan, newChan, writeChan, readChan)
 import Data.Hashable (Hashable)
 import qualified Data.HashMap.Lazy as HM
 import Data.Text (Text, pack, unpack)
@@ -32,6 +31,7 @@ import qualified Data.Map as M
 import qualified Data.Vector as V
 import Data.Aeson (Value (..))
 import Data.Attoparsec.Number (Number (..))
+import Language.Haskell.Interpreter
 import Language.Haskell.TH (Dec, runQ)
 import Language.Haskell.TH.Ppr (pprint)
 
@@ -173,70 +173,91 @@ arbitrarySchema depth = do
 instance (Eq a) => Arbitrary (Schema V3 a) where
   arbitrary = arbitrarySchema 3
 
-tests :: [Test]
-tests =
-  [ testProperty "generated code typechecks" typecheckGenerate
-  , testGroup "examples" testExamples
-  , testCase "1-tuple" $ do
-      let
-        schema = empty
-          { schemaType = [Choice1of2 ArrayType]
-          , schemaItems = Just $ Choice2of2 [empty { schemaType = [Choice1of2 NumberType] }]
-          }
-        graph = M.singleton "A" schema
-      (code, _) <- runQ $ generateModule "TestOneTuple" graph
-      typecheck code
-      return ()
-  ]
+data ForkLift = ForkLift (Chan (Interpreter (), InterpreterError -> IO ()))
 
-typecheckGenerate :: Schema V3 Text -> Property
-typecheckGenerate schema = morallyDubiousIOProperty $ do
+-- | uses the Forklift pattern (http://apfelmus.nfshost.com/blog/2012/06/07-forklift.html)
+--   to send commands to an interpreter running in a different thread
+startInterpreterThread :: IO ForkLift
+startInterpreterThread = do
+  cmdChan <- newChan
+  forkIO $ do
+    errorHandler <- newEmptyMVar
+    forever $ do
+      Left err <- runInterpreter $ forever $ do
+        (action, handler) <- liftIO $ readChan cmdChan
+        liftIO $ putMVar errorHandler handler
+        action
+        liftIO $ takeMVar errorHandler
+      handler <- takeMVar errorHandler
+      handler err
+  return $ ForkLift cmdChan
+
+carry :: ForkLift -> Interpreter a -> IO (Either InterpreterError a)
+carry (ForkLift cmdChan) action = do
+  result <- newEmptyMVar
+  let successHandler = action >>= liftIO . putMVar result . Right
+      errorHandler   = putMVar result . Left
+  writeChan cmdChan (successHandler, errorHandler)
+  takeMVar result
+
+tests :: IO [Test]
+tests = do
+  forkLift <- startInterpreterThread
+  return
+    [ testProperty "generated code typechecks" $ typecheckGenerate forkLift
+    , testGroup "examples" $ testExamples forkLift
+    , testCase "1-tuple" $ do
+        let
+          schema = empty
+            { schemaType = [Choice1of2 ArrayType]
+            , schemaItems = Just $ Choice2of2 [empty { schemaType = [Choice1of2 NumberType] }]
+            }
+          graph = M.singleton "A" schema
+        (code, _) <- runQ $ generateModule "TestOneTuple" graph
+        result <- typecheck code forkLift
+        case result of
+          Left err -> HU.assertFailure $ show err
+          Right _  -> return ()
+    ]
+
+typecheckGenerate :: ForkLift -> Schema V3 Text -> Property
+typecheckGenerate forkLift schema = morallyDubiousIOProperty $ do
   let graph = M.singleton "A" schema
   (code, _) <- runQ $ generateModule "CustomSchema" graph
-  TIO.putStrLn code
-  typecheck code
-  return True
+  eitherToResult <$> typecheck code forkLift
 
-loadInGhc :: Text -> (ModuleName -> Ghc ()) -> IO ()
-loadInGhc code action = case maybeName of
+withCodeTempFile :: Text -> (FilePath -> IO a) -> IO a
+withCodeTempFile code action = case maybeName of
   Nothing -> fail "couldn't find module name"
-  Just name -> do
-    withSystemTempFile (unpack name ++ ".hs") $ \path handle -> do
-      TIO.hPutStrLn handle code
-      hClose handle
-      defaultErrorHandler defaultLogAction $ runGhc (Just libdir) $ do
-        dflags <- getSessionDynFlags
-        setSessionDynFlags dflags
-        let
-          modName = mkModuleName (unpack name)
-          target = Target
-            { targetId = TargetFile path Nothing
-            , targetAllowObjCode = False
-            , targetContents = Nothing
-            }
-        setTargets [target]
-        load LoadAllTargets
-        action modName
+  Just name -> withSystemTempFile (unpack name ++ ".hs") $ \path handle -> do
+    TIO.hPutStrLn handle code
+    hClose handle
+    action path
   where
     maybeName = findName (T.lines code)
     findName (l:ls) = case T.words l of
       ("module":n:_) -> Just n
       _ -> findName ls
 
-typecheck :: Text -> IO ()
-typecheck code = loadInGhc code $ \modName -> do
-  modSummary <- getModSummary modName
-  parsedModule <- parseModule modSummary
-  _ <- typecheckModule parsedModule
-  return ()
+eitherToResult :: Show err => Either err a -> Result
+eitherToResult (Left err) = failed { reason = show err }
+eitherToResult (Right _)  = succeeded
 
-testExamples :: [Test]
-testExamples = examples testCase assertValid assertInvalid
+typecheck :: Text -> ForkLift -> IO (Either InterpreterError ())
+typecheck code forkLift = withCodeTempFile code $ \path ->
+  carry forkLift $ loadModules [path]
+
+testExamples :: ForkLift -> [Test]
+testExamples forkLift = examples testCase assertValid assertInvalid
   where
     assertValid = assertValidates True
     assertInvalid = assertValidates False
     assertValidates isValid graph schema value = do
       let graph' = if M.null graph then M.singleton "a" schema else graph
       (code, typeMap) <- runQ $ generateModule "TestSchema" graph'
-      loadInGhc code $ \modName -> do
-        return ()
+      result <- withCodeTempFile code $ \path -> carry forkLift $ do
+        loadModules [path]
+        -- TODO
+      case result of
+        Left err -> HU.assertFailure $ show err
+        Right _  -> return ()
