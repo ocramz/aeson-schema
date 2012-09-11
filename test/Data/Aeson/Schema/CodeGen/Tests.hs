@@ -1,5 +1,5 @@
 {-# OPTIONS_GHC -fno-warn-orphans #-}
-{-# LANGUAGE FlexibleInstances, ExistentialQuantification, RankNTypes, ScopedTypeVariables, ImpredicativeTypes #-}
+{-# LANGUAGE FlexibleInstances, ExistentialQuantification, RankNTypes, ScopedTypeVariables, ImpredicativeTypes, TupleSections #-}
 
 module Data.Aeson.Schema.CodeGen.Tests
   ( tests
@@ -16,7 +16,7 @@ import System.IO (hClose)
 import System.IO.Temp (withSystemTempFile)
 import Control.Applicative (pure, (<$>))
 import Data.Char (isAscii, isPrint)
-import Control.Monad (liftM2, (>=>), forever, when)
+import Control.Monad (liftM2, (>=>), forever)
 import Control.Concurrent (forkIO)
 import Control.Concurrent.MVar (newEmptyMVar, putMVar, takeMVar)
 import Control.Concurrent.Chan (Chan, newChan, writeChan, readChan)
@@ -38,7 +38,6 @@ import qualified Language.Haskell.TH.Syntax as THS
 import Data.Aeson.Schema
 import Data.Aeson.Schema.Choice
 import Data.Aeson.Schema.CodeGen (generateModule)
-import Data.Aeson.Schema.Validator (validate)
 import Data.Aeson.Schema.Helpers (formatValidators, replaceHiddenModules, getUsedModules)
 
 import Data.Aeson.Schema.Examples (examples)
@@ -110,7 +109,7 @@ arbitrarySchema depth = do
           , schemaUniqueItems = uniqueItems
           }
     , modifyIf (Choice1of2 ObjectType `elem` typ) $ \sch -> do
-        properties <- smallMapOf (T.filter (isPrint .&&. isAscii) <$> arbitrary) subSchema
+        properties <- smallMapOf (T.filter (\c -> isPrint c && isAscii c) <$> arbitrary) subSchema
         patternProperties <- shortListOf (tupleOf arbitrary subSchema)
         additionalProperties <- choice2of arbitrary subSchema
         dependencies <- smallMapOf arbitrary (choice2of arbitrary subSchema)
@@ -168,7 +167,6 @@ arbitrarySchema depth = do
     choice2of a b = oneof [Choice1of2 <$> a, Choice2of2 <$> b]
     tupleOf = liftM2 (,)
     smallMapOf k v = HM.fromList <$> shortListOf (tupleOf k v)
-    (.&&.) f g a = f a && g a
 
 instance (Eq a) => Arbitrary (Schema V3 a) where
   arbitrary = arbitrarySchema 3
@@ -204,8 +202,8 @@ tests :: IO [Test]
 tests = do
   forkLift <- startInterpreterThread
   return
-    [ {-testProperty "generated code typechecks" $ typecheckGenerate forkLift
-    ,-} testGroup "examples" $ testExamples forkLift
+    [ testProperty "generated code typechecks" $ typecheckGenerate forkLift
+    , testGroup "examples" $ testExamples forkLift
     , testCase "1-tuple" $ do
         let
           schema = empty
@@ -258,22 +256,28 @@ testExamples forkLift = examples testCase assertValid assertInvalid
       valueExpr <- replaceHiddenModules <$> runQ (THS.lift value)
       let typ = replaceHiddenModules $ typeMap M.! "a"
       let validatesExpr = unlines
-            [ "case DAT.parseMaybe parseJSON (" ++ pprint valueExpr ++ ") :: Maybe (" ++ pprint typ ++ ") of"
-            , "  Prelude.Just _  -> Prelude.True"
-            , "  Prelude.Nothing -> Prelude.False"
+            [ "case DAT.parseEither parseJSON (" ++ pprint valueExpr ++ ") :: Either String (" ++ pprint typ ++ ") of"
+            , "  Prelude.Left e  -> Just e"
+            , "  Prelude.Right _ -> Nothing"
             ]
       result <- withCodeTempFile code $ \path -> carry forkLift $ do
         loadModules [path]
-        setImportsQ $ map (\a -> (a,Nothing)) (getUsedModules (valueExpr, typ)) ++
+        setImportsQ $ map (,Nothing) (getUsedModules (valueExpr, typ)) ++
           [ ("TestSchema", Nothing)
           , ("Prelude", Nothing)
           , ("Data.Aeson.Types", Just "DAT")
           , ("Data.Ratio", Nothing)
           ]
-        interpret validatesExpr (as :: Bool)
+        interpret validatesExpr (as :: Maybe String)
       let printInfo = TIO.putStrLn code >> putStrLn validatesExpr
       case result of
         Left err -> printInfo >> (HU.assertFailure $ show err)
-        Right validates -> when (validates /= isValid) $ do
-          printInfo
-          HU.assertFailure $ show validates ++ " /= " ++ show isValid
+        Right validates -> case (isValid, validates) of
+          (True, Nothing) -> return ()
+          (False, Just _) -> return ()
+          (True, Just e)  -> do
+            printInfo
+            HU.assertFailure $ "value should have beean parsed but was rejected with error '" ++ e ++ "'"
+          (False, Nothing) -> do
+            printInfo
+            HU.assertFailure "value should have been rejected"

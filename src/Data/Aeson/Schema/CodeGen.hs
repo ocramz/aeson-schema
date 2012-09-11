@@ -9,7 +9,7 @@ module Data.Aeson.Schema.CodeGen
   , generateModule
   ) where
 
-import Control.Monad (forM_, when)
+import Control.Monad (forM_, when, unless)
 import Control.Arrow (first, second)
 import Data.Function (on)
 import Data.Char (isAlphaNum, isLetter, toLower, toUpper)
@@ -21,8 +21,7 @@ import Control.Applicative (Applicative (..), (<$>), (<*>), (<|>))
 import Language.Haskell.TH
 import Language.Haskell.TH.Syntax
 import Language.Haskell.TH.Ppr (pprint)
-import Data.String (IsString (..))
-import Data.List (unzip4, nub, sort)
+import Data.List (unzip4, sort)
 import Data.Monoid ((<>))
 import Data.Either (rights)
 import Data.Maybe (catMaybes, isNothing, maybeToList)
@@ -36,7 +35,7 @@ import Data.Traversable (forM, traverse)
 import qualified Text.Regex.PCRE as PCRE
 import Text.Regex.PCRE.String (Regex)
 import Data.Aeson
-import Data.Aeson.Types (Parser, parse)
+import Data.Aeson.Types (parse)
 
 import Data.Aeson.TH.Lift () -- Lift instances for Aeson values and common data types
 import Data.Aeson.Schema.Helpers
@@ -111,44 +110,45 @@ instance Lift Pattern where
   lift (Pattern src _) = [| let Right p = mkPattern src in p |]
 
 instance Lift (Schema V3 Text) where
-  lift schema = recUpdE (varE 'empty) $ catMaybes
-    [ field 'schemaType schemaType
-    , field 'schemaProperties schemaProperties
-    , field 'schemaPatternProperties schemaPatternProperties
-    , field 'schemaAdditionalProperties schemaAdditionalProperties
-    , field 'schemaItems schemaItems
-    , field 'schemaAdditionalItems schemaAdditionalItems
-    , field 'schemaRequired schemaRequired
-    , field 'schemaDependencies schemaDependencies
-    , field 'schemaMinimum schemaMinimum
-    , field 'schemaMaximum schemaMaximum
-    , field 'schemaExclusiveMinimum schemaExclusiveMinimum
-    , field 'schemaExclusiveMaximum schemaExclusiveMaximum
-    , field 'schemaMinItems schemaMinItems
-    , field 'schemaMaxItems schemaMaxItems
-    , field 'schemaUniqueItems schemaUniqueItems
-    , field 'schemaPattern schemaPattern
-    , field 'schemaMinLength schemaMinLength
-    , field 'schemaMaxLength schemaMaxLength
-    , field 'schemaEnum schemaEnum
-    , field 'schemaEnumDescriptions schemaEnumDescriptions
-    , field 'schemaDefault schemaDefault
-    , field 'schemaTitle schemaTitle
-    , field 'schemaDescription schemaDescription
-    , field 'schemaFormat schemaFormat
-    , field 'schemaDivisibleBy schemaDivisibleBy
-    , field 'schemaDisallow schemaDisallow
-    , field 'schemaExtends schemaExtends
-    , field 'schemaId schemaId
-    , fmap ('schemaDRef,) . lift <$> schemaDRef schema
-    , field 'schemaDSchema schemaDSchema
-    ]
+  lift schema = case updates of
+    [] -> varE 'empty
+    _  -> recUpdE (varE 'empty) updates
     where
+      updates = catMaybes
+        [ field 'schemaType schemaType
+        , field 'schemaProperties schemaProperties
+        , field 'schemaPatternProperties schemaPatternProperties
+        , field 'schemaAdditionalProperties schemaAdditionalProperties
+        , field 'schemaItems schemaItems
+        , field 'schemaAdditionalItems schemaAdditionalItems
+        , field 'schemaRequired schemaRequired
+        , field 'schemaDependencies schemaDependencies
+        , field 'schemaMinimum schemaMinimum
+        , field 'schemaMaximum schemaMaximum
+        , field 'schemaExclusiveMinimum schemaExclusiveMinimum
+        , field 'schemaExclusiveMaximum schemaExclusiveMaximum
+        , field 'schemaMinItems schemaMinItems
+        , field 'schemaMaxItems schemaMaxItems
+        , field 'schemaUniqueItems schemaUniqueItems
+        , field 'schemaPattern schemaPattern
+        , field 'schemaMinLength schemaMinLength
+        , field 'schemaMaxLength schemaMaxLength
+        , field 'schemaEnum schemaEnum
+        , field 'schemaEnumDescriptions schemaEnumDescriptions
+        , field 'schemaDefault schemaDefault
+        , field 'schemaTitle schemaTitle
+        , field 'schemaDescription schemaDescription
+        , field 'schemaFormat schemaFormat
+        , field 'schemaDivisibleBy schemaDivisibleBy
+        , field 'schemaDisallow schemaDisallow
+        , field 'schemaExtends schemaExtends
+        , field 'schemaId schemaId
+        , fmap ('schemaDRef,) . lift . Just <$> schemaDRef schema
+        , field 'schemaDSchema schemaDSchema
+        ]
       field name accessor = if accessor schema == accessor empty
         then Nothing
         else Just $ (name,) <$> lift (accessor schema)
-      dRef = case schemaDRef schema of
-        Nothing -> Nothing
 
 instance (Lift k, Lift v) => Lift (M.Map k v) where
   lift m = [| M.fromList $(lift $ M.toList m) |]
@@ -158,6 +158,7 @@ extraModules =
   [ "Text.Regex" -- provides RegexMaker instances
   , "Text.Regex.PCRE.String" -- provides RegexLike instances, Regex type
   , "Data.Aeson.Types" -- Parser type
+  , "Data.Ratio"
   ]
 
 generate :: Graph (Schema V3) Text -> Q (Code, M.Map Text Type)
@@ -279,7 +280,7 @@ generateSchema name schema = case schemaDRef schema of
       else lamE [varP val] $ doE $ checkers ++ [noBindS $ parser `appE` varE val]
 
 assertStmt :: ExpQ -> String -> StmtQ
-assertStmt expr err = noBindS [| when $(expr) (fail err) |]
+assertStmt expr err = noBindS [| unless $(expr) (fail err) |]
 
 lambdaPattern :: PatQ -> ExpQ -> ExpQ -> ExpQ
 lambdaPattern pat body err = lamE [varP val] $ caseE (varE val)
@@ -357,9 +358,8 @@ cleanName str = charFirst
     isAllowed c = isAlphaNum c || c `elem` "'_"
     cleaned = filter isAllowed str
     charFirst = case cleaned of
-      "" -> ""
-      (chr:rest) -> if isLetter chr || chr == '_' then cleaned else '_':cleaned
-
+      (chr:_) | not (isLetter chr || chr == '_') -> '_':cleaned
+      _ -> cleaned
 firstUpper, firstLower :: String -> String
 firstUpper "" = ""
 firstUpper (c:cs) = toUpper c : cs
