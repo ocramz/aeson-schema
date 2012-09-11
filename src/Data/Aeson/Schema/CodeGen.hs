@@ -37,7 +37,6 @@ import qualified Text.Regex.PCRE as PCRE
 import Text.Regex.PCRE.String (Regex)
 import Data.Aeson
 import Data.Aeson.Types (Parser, parse)
-import Data.Generics (everywhere, mkT, everything, mkQ)
 
 import Data.Aeson.TH.Lift () -- Lift instances for Aeson values and common data types
 import Data.Aeson.Schema.Helpers
@@ -112,59 +111,47 @@ instance Lift Pattern where
   lift (Pattern src _) = [| let Right p = mkPattern src in p |]
 
 instance Lift (Schema V3 Text) where
-  lift schema = recConE ''Schema
-    [ field 'schemaType $ schemaType schema
-    , field 'schemaProperties $ schemaProperties schema
-    , field 'schemaPatternProperties $ schemaPatternProperties schema
-    , field 'schemaAdditionalProperties $ schemaAdditionalProperties schema
-    , field 'schemaItems $ schemaItems schema
-    , field 'schemaAdditionalItems $ schemaAdditionalItems schema
-    , field 'schemaRequired $ schemaRequired schema
-    , field 'schemaDependencies $ schemaDependencies schema
-    , field 'schemaMinimum $ schemaMinimum schema
-    , field 'schemaMaximum $ schemaMaximum schema
-    , field 'schemaExclusiveMinimum $ schemaExclusiveMinimum schema
-    , field 'schemaExclusiveMaximum $ schemaExclusiveMaximum schema
-    , field 'schemaMinItems $ schemaMinItems schema
-    , field 'schemaMaxItems $ schemaMaxItems schema
-    , field 'schemaUniqueItems $ schemaUniqueItems schema
-    , field 'schemaPattern $ schemaPattern schema
-    , field 'schemaMinLength $ schemaMinLength schema
-    , field 'schemaMaxLength $ schemaMaxLength schema
-    , field 'schemaEnum $ schemaEnum schema
-    , field 'schemaEnumDescriptions $ schemaEnumDescriptions schema
-    , field 'schemaDefault $ schemaDefault schema
-    , field 'schemaTitle $ schemaTitle schema
-    , field 'schemaDescription $ schemaDescription schema
-    , field 'schemaFormat $ schemaFormat schema
-    , field 'schemaDivisibleBy $ schemaDivisibleBy schema
-    , field 'schemaDisallow $ schemaDisallow schema
-    , field 'schemaExtends $ schemaExtends schema
-    , field 'schemaId $ schemaId schema
-    , field 'schemaDRef $ schemaDRef schema
-    , field 'schemaDSchema $ schemaDSchema schema
+  lift schema = recUpdE (varE 'empty) $ catMaybes
+    [ field 'schemaType schemaType
+    , field 'schemaProperties schemaProperties
+    , field 'schemaPatternProperties schemaPatternProperties
+    , field 'schemaAdditionalProperties schemaAdditionalProperties
+    , field 'schemaItems schemaItems
+    , field 'schemaAdditionalItems schemaAdditionalItems
+    , field 'schemaRequired schemaRequired
+    , field 'schemaDependencies schemaDependencies
+    , field 'schemaMinimum schemaMinimum
+    , field 'schemaMaximum schemaMaximum
+    , field 'schemaExclusiveMinimum schemaExclusiveMinimum
+    , field 'schemaExclusiveMaximum schemaExclusiveMaximum
+    , field 'schemaMinItems schemaMinItems
+    , field 'schemaMaxItems schemaMaxItems
+    , field 'schemaUniqueItems schemaUniqueItems
+    , field 'schemaPattern schemaPattern
+    , field 'schemaMinLength schemaMinLength
+    , field 'schemaMaxLength schemaMaxLength
+    , field 'schemaEnum schemaEnum
+    , field 'schemaEnumDescriptions schemaEnumDescriptions
+    , field 'schemaDefault schemaDefault
+    , field 'schemaTitle schemaTitle
+    , field 'schemaDescription schemaDescription
+    , field 'schemaFormat schemaFormat
+    , field 'schemaDivisibleBy schemaDivisibleBy
+    , field 'schemaDisallow schemaDisallow
+    , field 'schemaExtends schemaExtends
+    , field 'schemaId schemaId
+    , fmap ('schemaDRef,) . lift <$> schemaDRef schema
+    , field 'schemaDSchema schemaDSchema
     ]
-    where field name val = (name,) <$> lift val
+    where
+      field name accessor = if accessor schema == accessor empty
+        then Nothing
+        else Just $ (name,) <$> lift (accessor schema)
+      dRef = case schemaDRef schema of
+        Nothing -> Nothing
 
 instance (Lift k, Lift v) => Lift (M.Map k v) where
   lift m = [| M.fromList $(lift $ M.toList m) |]
-
-replaceHiddenModules :: Dec -> Dec
-replaceHiddenModules = everywhere $ mkT replaceModule 
-  where
-    replacements =
-      [ ("Data.HashMap.Base", "Data.HashMap.Lazy")
-      , ("Data.Aeson.Types.Class", "Data.Aeson")
-      , ("Data.Aeson.Types.Internal", "Data.Aeson")
-      , ("GHC.Integer.Type", "Prelude") -- "Could not find module `GHC.Integer.Type'; it is a hidden module in the package `integer-gmp'"
-      ]
-    replaceModule :: Name -> Name
-    replaceModule n = case nameModule n of
-      Just "GHC.Tuple" -> mkName $ nameBase n
-      Just m -> case lookup m replacements of
-        Just r -> mkName $ r ++ ('.' : nameBase n)
-        Nothing -> n
-      _ -> n
 
 extraModules :: [String]
 extraModules =
@@ -172,12 +159,6 @@ extraModules =
   , "Text.Regex.PCRE.String" -- provides RegexLike instances, Regex type
   , "Data.Aeson.Types" -- Parser type
   ]
-
-getUsedModules :: [Dec] -> [String]
-getUsedModules = nub . concatMap (everything (++) ([] `mkQ` extractModule))
-  where
-    extractModule :: Name -> [String]
-    extractModule = maybeToList . nameModule
 
 generate :: Graph (Schema V3) Text -> Q (Code, M.Map Text Type)
 generate graph = swap <$> evalRWST (unCodeGenM generateTopLevel) graph HS.empty
@@ -216,16 +197,16 @@ generateTopLevel = do
   graphDec <- runQ $ valD (varP graphN) (normalB $ lift graph) []
   tell [Declaration graphDecType Nothing, Declaration graphDec Nothing]
   fmap M.fromList $ forM (M.toList graph) $ \(name, schema) -> do
-    (typQ, exprQ) <- generateSchema name schema
-    typ <- runQ typQ
-    (name,) <$> case typ of
-      ConT _ -> return typ
-      _      -> do
+    (typeQ, exprQ) <- generateSchema name schema
+    expr <- runQ exprQ
+    (name,) <$> case expr of
+      VarE name | name == 'parseJSON -> runQ typeQ
+      _  -> do
         newtypeName <- qNewName $ firstUpper $ unpack name
-        let newtypeCon = normalC newtypeName [strictType notStrict (return typ)]
+        let newtypeCon = normalC newtypeName [strictType notStrict typeQ]
         newtypeDec <- runQ $ newtypeD (cxt []) newtypeName [] newtypeCon []
         fromJSONInst <- runQ $ instanceD (cxt []) (conT ''FromJSON `appT` conT newtypeName)
-          [ valD (varP $ mkName "parseJSON") (normalB [| fmap $(conE newtypeName) . $exprQ |]) []
+          [ valD (varP $ mkName "parseJSON") (normalB [| fmap $(conE newtypeName) . $(return expr) |]) []
           ]
         tell [Declaration newtypeDec Nothing, Declaration fromJSONInst Nothing]
         return $ ConT newtypeName

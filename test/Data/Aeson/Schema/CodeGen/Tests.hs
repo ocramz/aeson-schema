@@ -1,3 +1,4 @@
+{-# OPTIONS_GHC -fno-warn-orphans #-}
 {-# LANGUAGE FlexibleInstances, ExistentialQuantification, RankNTypes, ScopedTypeVariables, ImpredicativeTypes #-}
 
 module Data.Aeson.Schema.CodeGen.Tests
@@ -5,18 +6,17 @@ module Data.Aeson.Schema.CodeGen.Tests
   ) where
 
 import Test.Framework
-import Test.Framework.Options (TestOptions' (..))
 import Test.Framework.Providers.QuickCheck2
 import Test.QuickCheck hiding (Result (..))
 import Test.QuickCheck.Property (morallyDubiousIOProperty, Result (..), succeeded, failed)
 import Test.Framework.Providers.HUnit
 import qualified Test.HUnit as HU
 
-import System.IO (hPutStrLn, hClose)
+import System.IO (hClose)
 import System.IO.Temp (withSystemTempFile)
-import Control.Applicative (pure, (<$>), (<*>))
+import Control.Applicative (pure, (<$>))
 import Data.Char (isAscii, isPrint)
-import Control.Monad (liftM2, (>=>), forM_, forever)
+import Control.Monad (liftM2, (>=>), forever, when)
 import Control.Concurrent (forkIO)
 import Control.Concurrent.MVar (newEmptyMVar, putMVar, takeMVar)
 import Control.Concurrent.Chan (Chan, newChan, writeChan, readChan)
@@ -26,20 +26,20 @@ import Data.Text (Text, pack, unpack)
 import qualified Data.Text as T
 import qualified Data.Text.IO as TIO
 import Data.Maybe (isNothing, listToMaybe)
-import Data.List (nub)
 import qualified Data.Map as M
 import qualified Data.Vector as V
 import Data.Aeson (Value (..))
 import Data.Attoparsec.Number (Number (..))
 import Language.Haskell.Interpreter
-import Language.Haskell.TH (Dec, runQ)
+import Language.Haskell.TH (runQ)
 import Language.Haskell.TH.Ppr (pprint)
+import qualified Language.Haskell.TH.Syntax as THS
 
 import Data.Aeson.Schema
 import Data.Aeson.Schema.Choice
 import Data.Aeson.Schema.CodeGen (generateModule)
 import Data.Aeson.Schema.Validator (validate)
-import Data.Aeson.Schema.Helpers (formatValidators)
+import Data.Aeson.Schema.Helpers (formatValidators, replaceHiddenModules, getUsedModules)
 
 import Data.Aeson.Schema.Examples (examples)
 
@@ -89,13 +89,13 @@ arbitrarySchema depth = do
   required <- arbitrary
   disallow <- rareShortListOf (choice2of arbitrary subSchema)
   extends <- rareShortListOf subSchema
-  let sch = empty
+  let sch0 = empty
         { schemaType = typ
         , schemaRequired = required
         , schemaDisallow = disallow
         , schemaExtends = extends
         }
-  sch' <- flip (foldl (>=>) return) sch
+  sch1 <- flip (foldl (>=>) return) sch0
     [ modifyIf (Choice1of2 ArrayType `elem` typ) $ \sch -> do
         items <- maybeOf (choice2of subSchema $ shortListOf1 subSchema)
         additionalItems <- choice2of arbitrary subSchema
@@ -148,7 +148,7 @@ arbitrarySchema depth = do
           }
 
     ]
-  let simple = sch'
+  let simple = sch1
   --enum <- maybeOf $ nub . take 3 <$> listOf1 generateValidValue (fmap undefined simple)
   enum <- return Nothing
   dflt <- case enum of
@@ -180,7 +180,7 @@ data ForkLift = ForkLift (Chan (Interpreter (), InterpreterError -> IO ()))
 startInterpreterThread :: IO ForkLift
 startInterpreterThread = do
   cmdChan <- newChan
-  forkIO $ do
+  _ <- forkIO $ do
     errorHandler <- newEmptyMVar
     forever $ do
       Left err <- runInterpreter $ forever $ do
@@ -204,8 +204,8 @@ tests :: IO [Test]
 tests = do
   forkLift <- startInterpreterThread
   return
-    [ testProperty "generated code typechecks" $ typecheckGenerate forkLift
-    , testGroup "examples" $ testExamples forkLift
+    [ {-testProperty "generated code typechecks" $ typecheckGenerate forkLift
+    ,-} testGroup "examples" $ testExamples forkLift
     , testCase "1-tuple" $ do
         let
           schema = empty
@@ -255,9 +255,25 @@ testExamples forkLift = examples testCase assertValid assertInvalid
     assertValidates isValid graph schema value = do
       let graph' = if M.null graph then M.singleton "a" schema else graph
       (code, typeMap) <- runQ $ generateModule "TestSchema" graph'
+      valueExpr <- replaceHiddenModules <$> runQ (THS.lift value)
+      let typ = replaceHiddenModules $ typeMap M.! "a"
+      let validatesExpr = unlines
+            [ "case DAT.parseMaybe parseJSON (" ++ pprint valueExpr ++ ") :: Maybe (" ++ pprint typ ++ ") of"
+            , "  Prelude.Just _  -> Prelude.True"
+            , "  Prelude.Nothing -> Prelude.False"
+            ]
       result <- withCodeTempFile code $ \path -> carry forkLift $ do
         loadModules [path]
-        -- TODO
+        setImportsQ $ map (\a -> (a,Nothing)) (getUsedModules (valueExpr, typ)) ++
+          [ ("TestSchema", Nothing)
+          , ("Prelude", Nothing)
+          , ("Data.Aeson.Types", Just "DAT")
+          , ("Data.Ratio", Nothing)
+          ]
+        interpret validatesExpr (as :: Bool)
+      let printInfo = TIO.putStrLn code >> putStrLn validatesExpr
       case result of
-        Left err -> HU.assertFailure $ show err
-        Right _  -> return ()
+        Left err -> printInfo >> (HU.assertFailure $ show err)
+        Right validates -> when (validates /= isValid) $ do
+          printInfo
+          HU.assertFailure $ show validates ++ " /= " ++ show isValid

@@ -3,16 +3,21 @@ module Data.Aeson.Schema.Helpers
   , formatValidators
   , validateFormat
   , isDivisibleBy
+  , replaceHiddenModules
+  , getUsedModules
   ) where
 
 import qualified Data.Vector as V
 import Data.List (nub)
+import Data.Maybe (maybeToList)
 import Control.Monad (join)
 import Data.Text (Text, unpack)
 import Text.Regex.PCRE (makeRegexM)
 import Text.Regex.PCRE.String (Regex)
 import Data.Attoparsec.Number (Number (..))
 import Data.Ratio (denominator, approxRational)
+import Language.Haskell.TH (Name, mkName, nameBase, nameModule)
+import Data.Generics (Data, everywhere, mkT, everything, mkQ)
 
 vectorUnique :: (Eq a) => V.Vector a -> Bool
 vectorUnique v = length (nub $ V.toList v) == V.length v
@@ -45,3 +50,31 @@ isDivisibleBy :: Number -> Number -> Bool
 isDivisibleBy (I i) (I j) = i `mod` j == 0
 isDivisibleBy a b = a == fromInteger 0 || denominator (approxRational (a / b) epsilon) `elem` [-1,1]
   where epsilon = D $ 10 ** (-10)
+
+replaceHiddenModules :: Data a => a -> a -- Dec -> Dec or Exp -> Exp
+replaceHiddenModules = everywhere $ mkT replaceModule 
+  where
+    replacements =
+      [ ("Data.HashMap.Base", "Data.HashMap.Lazy")
+      , ("Data.Aeson.Types.Class", "Data.Aeson")
+      , ("Data.Aeson.Types.Internal", "Data.Aeson")
+      , ("GHC.Integer.Type", "Prelude") -- "Could not find module `GHC.Integer.Type'; it is a hidden module in the package `integer-gmp'"
+      , ("GHC.Types", "Prelude")
+      , ("GHC.Real", "Prelude")
+      , ("Data.Text.Internal", "Data.Text")
+      ]
+    replaceModule :: Name -> Name
+    replaceModule n = case nameModule n of
+      Just "Data.Aeson.Types.Internal" | nameBase n `elem` ["I", "D"] ->
+        mkName $ "Data.Attoparsec.Number." ++ nameBase n
+      Just "GHC.Tuple" -> mkName $ nameBase n
+      Just m -> case lookup m replacements of
+        Just r -> mkName $ r ++ ('.' : nameBase n)
+        Nothing -> n
+      _ -> n
+
+getUsedModules :: Data a => a -> [String]
+getUsedModules = nub . everything (++) ([] `mkQ` extractModule)
+  where
+    extractModule :: Name -> [String]
+    extractModule = maybeToList . nameModule
