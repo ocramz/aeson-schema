@@ -10,20 +10,18 @@ module Data.Aeson.Schema.CodeGen
   ) where
 
 import Control.Monad (forM_, when, unless)
+import Control.Monad.RWS.Lazy (RWST (..), MonadReader (..), MonadWriter (..), MonadState (..), evalRWST)
 import Control.Arrow (first, second)
 import Data.Function (on)
 import Data.Char (isAlphaNum, isLetter, toLower, toUpper)
 import Data.Tuple (swap)
 import Data.Attoparsec.Number (Number (..))
-import Control.Monad.RWS.Lazy (RWST (..), MonadReader (..), MonadWriter (..), MonadState (..), evalRWST)
 import qualified Control.Monad.Trans.Class as MT
 import Control.Applicative (Applicative (..), (<$>), (<*>), (<|>))
 import Language.Haskell.TH
 import Language.Haskell.TH.Syntax
-import Language.Haskell.TH.Ppr (pprint)
 import Data.List (unzip4, sort)
 import Data.Monoid ((<>))
-import Data.Either (rights)
 import Data.Maybe (catMaybes, isNothing, maybeToList)
 import Data.Text (Text, pack, unpack)
 import qualified Data.Text as T
@@ -71,7 +69,7 @@ instance Quasi CodeGenM where
         , "instance", "let", "in", "mdo", "module", "newtype", "proc"
         , "qualified", "rec", "type", "type family", "type instance", "where"
         ]
-      validName s = not (s `elem` ["", "_"] || s `HS.member` haskellKeywords)
+      validName n = not (n `elem` ["", "_"] || n `HS.member` haskellKeywords)
   qReport b = CodeGenM . MT.lift . report b
   qRecover (CodeGenM handler) (CodeGenM action) = do
     graph <- ask
@@ -201,7 +199,7 @@ generateTopLevel = do
     (typeQ, exprQ) <- generateSchema name schema
     expr <- runQ exprQ
     (name,) <$> case expr of
-      VarE name | name == 'parseJSON -> runQ typeQ
+      VarE fun | fun == 'parseJSON -> runQ typeQ
       _  -> do
         newtypeName <- qNewName $ firstUpper $ unpack name
         let newtypeCon = normalC newtypeName [strictType notStrict typeQ]
@@ -383,9 +381,9 @@ generateObject name schema = do
         else (propertyName, conT ''Maybe `appT` typ, [| traverse $expr $lookupProperty |], Nothing)
   conName <- qNewName $ firstUpper $ unpack name
   let typ = conT conName
-  let dataCon = recC conName $ zipWith (\name typ -> (name,NotStrict,) <$> typ) propertyNames propertyTypes
+  let dataCon = recC conName $ zipWith (\pname ptyp -> (pname,NotStrict,) <$> ptyp) propertyNames propertyTypes
   dataDec <- runQ $ dataD (cxt []) conName [] [dataCon] []
-  let parser = foldl (\parser propertyParser -> [| $parser <*> $propertyParser |]) [| pure $(conE conName) |] propertyParsers
+  let parser = foldl (\oparser propertyParser -> [| $oparser <*> $propertyParser |]) [| pure $(conE conName) |] propertyParsers
   fromJSONInst <- runQ $ instanceD (cxt []) (conT ''FromJSON `appT` typ)
     [ funD (mkName "parseJSON") -- cannot use a qualified name here
         [ clause [conP 'Object [varP obj]] (normalB $ doE $ checkers ++ [noBindS parser]) (catMaybes defaultParsers)
@@ -397,10 +395,10 @@ generateObject name schema = do
   where
     obj = mkName "obj"
     checkDependencies deps = noBindS
-      [| let items = HM.toList $(varE obj) in forM_ items $ \(name, _) -> case HM.lookup name $(lift deps) of
+      [| let items = HM.toList $(varE obj) in forM_ items $ \(pname, _) -> case HM.lookup pname $(lift deps) of
            Nothing -> return ()
            Just (Choice1of2 props) -> forM_ props $ \prop -> if isNothing (HM.lookup prop $(varE obj))
-             then fail $ unpack name ++ " requires property " ++ unpack prop
+             then fail $ unpack pname ++ " requires property " ++ unpack prop
              else return ()
            Just (Choice2of2 depSchema) -> case validate $(varE $ mkName "graph") depSchema (Object $(varE obj)) of
              Nothing -> return ()
@@ -413,12 +411,12 @@ generateObject name schema = do
       , match (conP 'Just [varP $ mkName "err"]) (normalB [| fail $(varE $ mkName "err") |]) []
       ]
     checkPatternAndAdditionalProperties patterns additional = noBindS
-      [| let items = HM.toList $(varE obj) in forM_ items $ \(name, value) -> do
-           let matchingPatterns = filter (flip PCRE.match (unpack name) . patternCompiled . fst) $(lift patterns)
+      [| let items = HM.toList $(varE obj) in forM_ items $ \(pname, value) -> do
+           let matchingPatterns = filter (flip PCRE.match (unpack pname) . patternCompiled . fst) $(lift patterns)
            forM_ matchingPatterns $ \(_, sch) -> case validate $(varE $ mkName "graph") sch value of
              Nothing -> return ()
              Just err -> fail err
-           let isAdditionalProperty = null matchingPatterns && not (name `elem` $(lift $ map fst $ HM.toList $ schemaProperties schema))
+           let isAdditionalProperty = null matchingPatterns && not (pname `elem` $(lift $ map fst $ HM.toList $ schemaProperties schema))
            when isAdditionalProperty $(checkAdditionalProperties [| value |] additional)
       |]
     additionalPropertiesAllowed (Choice1of2 True) = True

@@ -76,4 +76,5 @@ test-suite tests
                        QuickCheck >= 2.4.2 && < 2.5,
                        bytestring,
                        hint,
-                       temporary
+                       temporary,
+                       mtl

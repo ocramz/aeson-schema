@@ -17,6 +17,7 @@ import System.IO.Temp (withSystemTempFile)
 import Control.Applicative (pure, (<$>))
 import Data.Char (isAscii, isPrint)
 import Control.Monad (liftM2, (>=>), forever)
+import Control.Monad.Trans (liftIO)
 import Control.Concurrent (forkIO)
 import Control.Concurrent.MVar (newEmptyMVar, putMVar, takeMVar)
 import Control.Concurrent.Chan (Chan, newChan, writeChan, readChan)
@@ -30,7 +31,7 @@ import qualified Data.Map as M
 import qualified Data.Vector as V
 import Data.Aeson (Value (..))
 import Data.Attoparsec.Number (Number (..))
-import Language.Haskell.Interpreter
+import qualified Language.Haskell.Interpreter as Hint
 import Language.Haskell.TH (runQ)
 import Language.Haskell.TH.Ppr (pprint)
 import qualified Language.Haskell.TH.Syntax as THS
@@ -171,7 +172,7 @@ arbitrarySchema depth = do
 instance (Eq a) => Arbitrary (Schema V3 a) where
   arbitrary = arbitrarySchema 3
 
-data ForkLift = ForkLift (Chan (Interpreter (), InterpreterError -> IO ()))
+data ForkLift = ForkLift (Chan (Hint.Interpreter (), Hint.InterpreterError -> IO ()))
 
 -- | uses the Forklift pattern (http://apfelmus.nfshost.com/blog/2012/06/07-forklift.html)
 --   to send commands to an interpreter running in a different thread
@@ -181,7 +182,7 @@ startInterpreterThread = do
   _ <- forkIO $ do
     errorHandler <- newEmptyMVar
     forever $ do
-      Left err <- runInterpreter $ forever $ do
+      Left err <- Hint.runInterpreter $ forever $ do
         (action, handler) <- liftIO $ readChan cmdChan
         liftIO $ putMVar errorHandler handler
         action
@@ -190,7 +191,7 @@ startInterpreterThread = do
       handler err
   return $ ForkLift cmdChan
 
-carry :: ForkLift -> Interpreter a -> IO (Either InterpreterError a)
+carry :: ForkLift -> Hint.Interpreter a -> IO (Either Hint.InterpreterError a)
 carry (ForkLift cmdChan) action = do
   result <- newEmptyMVar
   let successHandler = action >>= liftIO . putMVar result . Right
@@ -236,14 +237,15 @@ withCodeTempFile code action = case maybeName of
     findName (l:ls) = case T.words l of
       ("module":n:_) -> Just n
       _ -> findName ls
+    findName _ = Nothing
 
 eitherToResult :: Show err => Either err a -> Result
 eitherToResult (Left err) = failed { reason = show err }
 eitherToResult (Right _)  = succeeded
 
-typecheck :: Text -> ForkLift -> IO (Either InterpreterError ())
+typecheck :: Text -> ForkLift -> IO (Either Hint.InterpreterError ())
 typecheck code forkLift = withCodeTempFile code $ \path ->
-  carry forkLift $ loadModules [path]
+  carry forkLift $ Hint.loadModules [path]
 
 testExamples :: ForkLift -> [Test]
 testExamples forkLift = examples testCase assertValid assertInvalid
@@ -261,14 +263,14 @@ testExamples forkLift = examples testCase assertValid assertInvalid
             , "  Prelude.Right _ -> Nothing"
             ]
       result <- withCodeTempFile code $ \path -> carry forkLift $ do
-        loadModules [path]
-        setImportsQ $ map (,Nothing) (getUsedModules (valueExpr, typ)) ++
+        Hint.loadModules [path]
+        Hint.setImportsQ $ map (,Nothing) (getUsedModules (valueExpr, typ)) ++
           [ ("TestSchema", Nothing)
           , ("Prelude", Nothing)
           , ("Data.Aeson.Types", Just "DAT")
           , ("Data.Ratio", Nothing)
           ]
-        interpret validatesExpr (as :: Maybe String)
+        Hint.interpret validatesExpr (Hint.as :: Maybe String)
       let printInfo = TIO.putStrLn code >> putStrLn validatesExpr
       case result of
         Left err -> printInfo >> (HU.assertFailure $ show err)

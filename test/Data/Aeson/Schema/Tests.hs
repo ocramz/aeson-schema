@@ -11,7 +11,6 @@ import Data.Aeson
 import Data.Text ()
 import qualified Data.ByteString.Lazy as L
 import qualified Data.HashMap.Strict as H
-import qualified Data.Map as M
 
 import Data.Aeson.Schema
 import Data.Aeson.Schema.Choice
