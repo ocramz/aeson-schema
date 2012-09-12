@@ -2,7 +2,7 @@
 
 aeson-schema is an implementation of the [JSON Schema specification](http://json-schema.org). It can be used in two ways:
 
-* To confirm that a JSON value validates against a given schema.
+* To validate JSON value against a schema.
 * To generate a parser for a schema. The generated code includes Haskell data structure definitions and FromJSON instances. This allows you to use the validated data in a type-safe and convenient way.
 
 You can install this library using cabal:

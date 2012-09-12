@@ -20,7 +20,7 @@ import qualified Control.Monad.Trans.Class as MT
 import Control.Applicative (Applicative (..), (<$>), (<*>), (<|>))
 import Language.Haskell.TH
 import Language.Haskell.TH.Syntax
-import Data.List (unzip4, sort)
+import Data.List (unzip4, sort, mapAccumL)
 import Data.Monoid ((<>))
 import Data.Maybe (catMaybes, isNothing, maybeToList)
 import Data.Text (Text, pack, unpack)
@@ -48,28 +48,28 @@ data Declaration = Declaration Dec (Maybe Text)
 type Code = [Declaration]
 
 type StringSet = HS.HashSet String
-type SchemaGraph = Graph (Schema V3) Text
+type SchemaTypes = M.Map Text Name
 
 newtype CodeGenM a = CodeGenM
-  { unCodeGenM :: RWST SchemaGraph Code StringSet Q a
-  } deriving (Monad, Applicative, Functor, MonadReader SchemaGraph, MonadWriter Code, MonadState StringSet)
+  { unCodeGenM :: RWST SchemaTypes Code StringSet Q a
+  } deriving (Monad, Applicative, Functor, MonadReader SchemaTypes, MonadWriter Code, MonadState StringSet)
+
+codeGenNewName :: String -> StringSet -> (Name, StringSet)
+codeGenNewName s used = (Name (mkOccName free) NameS, HS.insert free used)
+  where
+    free = head $ dropWhile (`HS.member` used) $ (if validName s then (s:) else id) $ map (\i -> s ++ "_" ++ show i) ([1..] :: [Int])
+    -- taken from http://www.haskell.org/haskellwiki/Keywords
+    haskellKeywords = HS.fromList
+      [ "as", "case", "of", "class", "data", "data family", "data instance"
+      , "default", "deriving", "deriving instance", "do", "forall", "foreign"
+      , "hiding", "if", "then", "else", "import", "infix", "infixl", "infixr"
+      , "instance", "let", "in", "mdo", "module", "newtype", "proc"
+      , "qualified", "rec", "type", "type family", "type instance", "where"
+      ]
+    validName n = not (n `elem` ["", "_"] || n `HS.member` haskellKeywords)
 
 instance Quasi CodeGenM where
-  qNewName s = do
-    used <- get
-    let free = head $ dropWhile (`HS.member` used) $ (if validName s then (s:) else id) $ map (\i -> s ++ "_" ++ show i) ([1..] :: [Int])
-    put $ HS.insert free used
-    return $ Name (mkOccName free) NameS
-    where
-      -- taken from http://www.haskell.org/haskellwiki/Keywords
-      haskellKeywords = HS.fromList
-        [ "as", "case", "of", "class", "data", "data family", "data instance"
-        , "default", "deriving", "deriving instance", "do", "forall", "foreign"
-        , "hiding", "if", "then", "else", "import", "infix", "infixl", "infixr"
-        , "instance", "let", "in", "mdo", "module", "newtype", "proc"
-        , "qualified", "rec", "type", "type family", "type instance", "where"
-        ]
-      validName n = not (n `elem` ["", "_"] || n `HS.member` haskellKeywords)
+  qNewName = state . codeGenNewName
   qReport b = CodeGenM . MT.lift . report b
   qRecover (CodeGenM handler) (CodeGenM action) = do
     graph <- ask
@@ -159,18 +159,15 @@ extraModules =
   , "Data.Ratio"
   ]
 
-generate :: Graph (Schema V3) Text -> Q (Code, M.Map Text Type)
-generate graph = swap <$> evalRWST (unCodeGenM generateTopLevel) graph HS.empty
-
 getDecs :: Code -> [Dec]
 getDecs = catMaybes . map getDec
   where getDec (Declaration dec _) = Just dec
         getDec _ = Nothing
 
-generateTH :: Graph (Schema V3) Text -> Q ([Dec], M.Map Text Type)
+generateTH :: Graph (Schema V3) Text -> Q ([Dec], M.Map Text Name)
 generateTH = fmap (first getDecs) . generate
 
-generateModule :: Text -> Graph (Schema V3) Text -> Q (Text, M.Map Text Type)
+generateModule :: Text -> Graph (Schema V3) Text -> Q (Text, M.Map Text Name)
 generateModule modName = fmap (first $ renderCode . map rewrite) . generate
   where
     renderCode :: Code -> Text
@@ -187,54 +184,58 @@ generateModule modName = fmap (first $ renderCode . map rewrite) . generate
     renderDeclaration (Declaration dec Nothing)   = pack (pprint dec)
     renderDeclaration (Comment comment)           = T.unlines $ map (\line -> "-- " <> line) $ T.lines comment
 
-generateTopLevel :: CodeGenM (M.Map Text Type)
-generateTopLevel = do
-  graph <- ask
+generate :: Graph (Schema V3) Text -> Q (Code, M.Map Text Name)
+generate graph = swap <$> evalRWST (unCodeGenM $ generateTopLevel graph >> return typeMap) typeMap used
+  where
+    (used, typeMap) = second M.fromList $ mapAccumL nameAccum HS.empty (M.keys graph)
+    nameAccum usedNames schemaName = second (schemaName,) $ swap $ codeGenNewName (firstUpper $ unpack schemaName) usedNames
+
+generateTopLevel :: Graph (Schema V3) Text -> CodeGenM ()
+generateTopLevel graph = do
+  typeMap <- ask
   graphN <- qNewName "graph"
   when (nameBase graphN /= "graph") $ fail "name graph is already taken"
   graphDecType <- runQ $ sigD graphN [t| Graph (Schema V3) Text |]
   graphDec <- runQ $ valD (varP graphN) (normalB $ lift graph) []
   tell [Declaration graphDecType Nothing, Declaration graphDec Nothing]
-  fmap M.fromList $ forM (M.toList graph) $ \(name, schema) -> do
-    (typeQ, exprQ) <- generateSchema name schema
-    expr <- runQ exprQ
-    (name,) <$> case expr of
-      VarE fun | fun == 'parseJSON -> runQ typeQ
-      _  -> do
-        newtypeName <- qNewName $ firstUpper $ unpack name
-        let newtypeCon = normalC newtypeName [strictType notStrict typeQ]
-        newtypeDec <- runQ $ newtypeD (cxt []) newtypeName [] newtypeCon []
-        fromJSONInst <- runQ $ instanceD (cxt []) (conT ''FromJSON `appT` conT newtypeName)
-          [ valD (varP $ mkName "parseJSON") (normalB [| fmap $(conE newtypeName) . $(return expr) |]) []
-          ]
-        tell [Declaration newtypeDec Nothing, Declaration fromJSONInst Nothing]
-        return $ ConT newtypeName
+  forM_ (M.toList graph) $ \(name, schema) -> do
+    let typeName = typeMap M.! name
+    ((typeQ, exprQ), defNewtype) <- generateSchema (Just typeName) name schema
+    when defNewtype $ do
+      let newtypeCon = normalC typeName [strictType notStrict typeQ]
+      newtypeDec <- runQ $ newtypeD (cxt []) typeName [] newtypeCon []
+      fromJSONInst <- runQ $ instanceD (cxt []) (conT ''FromJSON `appT` conT typeName)
+        [ valD (varP $ mkName "parseJSON") (normalB [| fmap $(conE typeName) . $exprQ |]) []
+        ]
+      tell [Declaration newtypeDec Nothing, Declaration fromJSONInst Nothing]
 
-generateSchema :: Text -> Schema V3 Text -> CodeGenM (TypeQ, ExpQ)
-generateSchema name schema = case schemaDRef schema of
-  Just ref -> ask >>= \graph -> case M.lookup ref graph of
+generateSchema :: Maybe Name -> Text -> Schema V3 Text -> CodeGenM ((TypeQ, ExpQ), Bool)
+generateSchema decName name schema = case schemaDRef schema of
+  Just ref -> ask >>= \typesMap -> case M.lookup ref typesMap of
     Nothing -> fail "couldn't find referenced schema"
-    Just referencedSchema -> generateSchema name referencedSchema -- TODO
-  Nothing -> second wrap <$> case schemaType schema of
+    Just referencedSchema -> return ((conT referencedSchema, [| parseJSON |]), True)
+  Nothing -> first (second wrap) <$> case schemaType schema of
     [] -> fail "empty type"
-    [Choice1of2 typ] -> generateSimpleType name typ
-    [Choice2of2 sch] -> generateSchema name sch
+    [Choice1of2 typ] -> generateSimpleType decName name typ
+    [Choice2of2 sch] -> generateSchema decName name sch
     unionType -> do
       let l = pack . show $ length unionType
       let names = map (\i -> name <> "Choice" <> pack (show i) <> "of" <> l) ([1..] :: [Int])
-      subs <- sequence $ zipWith (choice2 (flip generateSimpleType) (flip generateSchema)) unionType names
-      generateUnionType subs
+      subs <- fmap (map fst) $ sequence $ zipWith (choice2 (flip $ generateSimpleType Nothing) (flip $ generateSchema Nothing)) unionType names
+      (,True) <$> generateUnionType subs
   where
-    generateSimpleType :: Text -> SchemaType -> CodeGenM (TypeQ, ExpQ)
-    generateSimpleType name' typ = case typ of
-      StringType  -> generateString schema
-      NumberType  -> generateNumber schema
-      IntegerType -> generateInteger schema
-      BooleanType -> generateBoolean
-      ObjectType  -> generateObject name' schema
-      ArrayType   -> generateArray name' schema
-      NullType    -> generateNull
-      AnyType     -> generateAny schema
+    generateSimpleType :: Maybe Name -> Text -> SchemaType -> CodeGenM ((TypeQ, ExpQ), Bool)
+    generateSimpleType decName' name' typ = case typ of
+      StringType  -> (,True) <$> generateString schema
+      NumberType  -> (,True) <$> generateNumber schema
+      IntegerType -> (,True) <$> generateInteger schema
+      BooleanType -> (,True) <$> generateBoolean
+      ObjectType  -> case checkers of
+        [] -> (,False) <$> generateObject decName' name' schema
+        _  -> (,True)  <$> generateObject Nothing name' schema
+      ArrayType   -> (,True) <$> generateArray name' schema
+      NullType    -> (,True) <$> generateNull
+      AnyType     -> (,True) <$> generateAny schema
     generateUnionType :: [(TypeQ, ExpQ)] -> CodeGenM (TypeQ, ExpQ)
     generateUnionType union = return (typ, lamE [varP val] code)
       where
@@ -364,13 +365,13 @@ firstUpper (c:cs) = toUpper c : cs
 firstLower "" = ""
 firstLower (c:cs) = toLower c : cs
 
-generateObject :: Text -> Schema V3 Text -> CodeGenM (TypeQ, ExpQ)
-generateObject name schema = do
+generateObject :: Maybe Name -> Text -> Schema V3 Text -> CodeGenM (TypeQ, ExpQ)
+generateObject decName name schema = do
   let propertiesList = HM.toList $ schemaProperties schema
   (propertyNames, propertyTypes, propertyParsers, defaultParsers) <- fmap unzip4 $ forM propertiesList $ \(fieldName, propertySchema) -> do
     let cleanedFieldName = cleanName $ unpack fieldName
     propertyName <- qNewName $ firstLower $ cleanedFieldName
-    (typ, expr) <- generateSchema (name <> pack (firstUpper cleanedFieldName)) propertySchema
+    ((typ, expr), _) <- generateSchema Nothing (name <> pack (firstUpper cleanedFieldName)) propertySchema
     let lookupProperty = [| HM.lookup $(lift fieldName) $(varE obj) |]
     case schemaDefault propertySchema of
       Just defaultValue -> do
@@ -379,7 +380,7 @@ generateObject name schema = do
       Nothing -> return $ if schemaRequired propertySchema
         then (propertyName, typ, [| maybe (fail $(lift $ "required property " ++ unpack fieldName ++ " missing")) $expr $lookupProperty |], Nothing)
         else (propertyName, conT ''Maybe `appT` typ, [| traverse $expr $lookupProperty |], Nothing)
-  conName <- qNewName $ firstUpper $ unpack name
+  conName <- maybe (qNewName $ firstUpper $ unpack name) return decName
   let typ = conT conName
   let dataCon = recC conName $ zipWith (\pname ptyp -> (pname,NotStrict,) <$> ptyp) propertyNames propertyTypes
   dataDec <- runQ $ dataD (cxt []) conName [] [dataCon] []
@@ -432,14 +433,14 @@ generateArray :: Text -> Schema V3 Text -> CodeGenM (TypeQ, ExpQ)
 generateArray name schema = case schemaItems schema of
   Nothing -> monomorphicArray (conT ''Value) (varE 'parseJSON)
   Just (Choice1of2 itemsSchema) -> do
-    (itemType, itemCode) <- generateSchema (name <> "Item") itemsSchema
+    ((itemType, itemCode), _) <- generateSchema Nothing (name <> "Item") itemsSchema
     monomorphicArray itemType itemCode
   Just (Choice2of2 itemSchemas) -> do
     let names = map (\i -> name <> "Item" <> pack (show i)) ([0..] :: [Int])
-    items <- sequence $ zipWith generateSchema names itemSchemas
+    items <- fmap (map fst) $ sequence $ zipWith (generateSchema Nothing) names itemSchemas
     additionalItems <- case schemaAdditionalItems schema of
       Choice1of2 b -> return $ Choice1of2 b
-      Choice2of2 sch -> Choice2of2 <$> generateSchema (name <> "AdditionalItems") sch
+      Choice2of2 sch -> Choice2of2 . fst <$> generateSchema Nothing (name <> "AdditionalItems") sch
     tupleArray items additionalItems
   where
     tupleArray :: [(TypeQ, ExpQ)] -> Choice2 Bool (TypeQ, ExpQ) -> CodeGenM (TypeQ, ExpQ)
