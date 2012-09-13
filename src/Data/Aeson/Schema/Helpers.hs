@@ -7,17 +7,17 @@ module Data.Aeson.Schema.Helpers
   , getUsedModules
   ) where
 
-import qualified Data.Vector as V
-import Data.List (nub)
-import Data.Maybe (maybeToList)
-import Control.Monad (join)
-import Data.Text (Text, unpack)
-import Text.Regex.PCRE (makeRegexM)
-import Text.Regex.PCRE.String (Regex)
-import Data.Attoparsec.Number (Number (..))
-import Data.Ratio (denominator, approxRational)
-import Language.Haskell.TH (Name, mkName, nameBase, nameModule)
-import Data.Generics (Data, everywhere, mkT, everything, mkQ)
+import           Control.Monad          (join)
+import           Data.Attoparsec.Number (Number (..))
+import           Data.Generics          (Data, everything, everywhere, mkQ, mkT)
+import           Data.List              (nub)
+import           Data.Maybe             (maybeToList)
+import           Data.Ratio             (approxRational, denominator)
+import           Data.Text              (Text, unpack)
+import qualified Data.Vector            as V
+import           Language.Haskell.TH    (Name, mkName, nameBase, nameModule)
+import           Text.Regex.PCRE        (makeRegexM)
+import           Text.Regex.PCRE.String (Regex)
 
 vectorUnique :: (Eq a) => V.Vector a -> Bool
 vectorUnique v = length (nub $ V.toList v) == V.length v
@@ -52,7 +52,7 @@ isDivisibleBy a b = a == fromInteger 0 || denominator (approxRational (a / b) ep
   where epsilon = D $ 10 ** (-10)
 
 replaceHiddenModules :: Data a => a -> a -- Dec -> Dec or Exp -> Exp
-replaceHiddenModules = everywhere $ mkT replaceModule 
+replaceHiddenModules = everywhere $ mkT replaceModule
   where
     replacements =
       [ ("Data.HashMap.Base", "Data.HashMap.Lazy")

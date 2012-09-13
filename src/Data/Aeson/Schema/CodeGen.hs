@@ -1,5 +1,8 @@
 {-# OPTIONS_GHC -fno-warn-orphans #-}
-{-# LANGUAGE TemplateHaskell, TupleSections, FlexibleInstances, GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE FlexibleInstances          #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE TemplateHaskell            #-}
+{-# LANGUAGE TupleSections              #-}
 
 module Data.Aeson.Schema.CodeGen
   ( Declaration (..)
@@ -9,37 +12,41 @@ module Data.Aeson.Schema.CodeGen
   , generateModule
   ) where
 
-import Control.Monad (forM_, when, unless)
-import Control.Monad.RWS.Lazy (RWST (..), MonadReader (..), MonadWriter (..), MonadState (..), evalRWST)
-import Control.Arrow (first, second)
-import Data.Function (on)
-import Data.Char (isAlphaNum, isLetter, toLower, toUpper)
-import Data.Tuple (swap)
-import Data.Attoparsec.Number (Number (..))
-import qualified Control.Monad.Trans.Class as MT
-import Control.Applicative (Applicative (..), (<$>), (<*>), (<|>))
-import Language.Haskell.TH
-import Language.Haskell.TH.Syntax
-import Data.List (unzip4, sort, mapAccumL)
-import Data.Monoid ((<>))
-import Data.Maybe (catMaybes, isNothing, maybeToList)
-import Data.Text (Text, pack, unpack)
-import qualified Data.Text as T
-import qualified Data.Vector as V
-import qualified Data.Map as M
-import qualified Data.HashMap.Lazy as HM
-import qualified Data.HashSet as HS
-import Data.Traversable (forM, traverse)
-import qualified Text.Regex.PCRE as PCRE
-import Text.Regex.PCRE.String (Regex)
-import Data.Aeson
-import Data.Aeson.Types (parse)
+import           Control.Applicative         (Applicative (..), (<$>), (<*>),
+                                              (<|>))
+import           Control.Arrow               (first, second)
+import           Control.Monad               (forM_, unless, when)
+import           Control.Monad.RWS.Lazy      (MonadReader (..), MonadState (..),
+                                              MonadWriter (..), RWST (..),
+                                              evalRWST)
+import qualified Control.Monad.Trans.Class   as MT
+import           Data.Aeson
+import           Data.Aeson.Types            (parse)
+import           Data.Attoparsec.Number      (Number (..))
+import           Data.Char                   (isAlphaNum, isLetter, toLower,
+                                              toUpper)
+import           Data.Function               (on)
+import qualified Data.HashMap.Lazy           as HM
+import qualified Data.HashSet                as HS
+import           Data.List                   (mapAccumL, sort, unzip4)
+import qualified Data.Map                    as M
+import           Data.Maybe                  (catMaybes, isNothing, maybeToList)
+import           Data.Monoid                 ((<>))
+import           Data.Text                   (Text, pack, unpack)
+import qualified Data.Text                   as T
+import           Data.Traversable            (forM, traverse)
+import           Data.Tuple                  (swap)
+import qualified Data.Vector                 as V
+import           Language.Haskell.TH
+import           Language.Haskell.TH.Syntax
+import qualified Text.Regex.PCRE             as PCRE
+import           Text.Regex.PCRE.String      (Regex)
 
-import Data.Aeson.TH.Lift () -- Lift instances for Aeson values and common data types
-import Data.Aeson.Schema.Helpers
-import Data.Aeson.Schema
-import Data.Aeson.Schema.Validator
-import Data.Aeson.Schema.Choice
+import           Data.Aeson.Schema
+import           Data.Aeson.Schema.Choice
+import           Data.Aeson.Schema.Helpers
+import           Data.Aeson.Schema.Validator
+import           Data.Aeson.TH.Lift
 
 
 data Declaration = Declaration Dec (Maybe Text)

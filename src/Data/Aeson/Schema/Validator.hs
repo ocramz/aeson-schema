@@ -5,22 +5,22 @@ module Data.Aeson.Schema.Validator
   , validate
   ) where
 
-import Prelude hiding (foldr, length)
-import Data.Maybe (isNothing)
-import qualified Data.List as L
-import Control.Monad (msum)
-import Data.Aeson (Value (..))
-import qualified Data.Aeson as A
-import qualified Data.Vector as V
-import qualified Data.HashMap.Strict as H
-import qualified Data.Map as M
-import Data.Text (Text, unpack, length)
-import Data.Attoparsec.Number (Number (..))
-import Text.Regex.PCRE (match)
+import           Control.Monad             (msum)
+import           Data.Aeson                (Value (..))
+import qualified Data.Aeson                as A
+import           Data.Attoparsec.Number    (Number (..))
+import qualified Data.HashMap.Strict       as H
+import qualified Data.List                 as L
+import qualified Data.Map                  as M
+import           Data.Maybe                (isNothing)
+import           Data.Text                 (Text, length, unpack)
+import qualified Data.Vector               as V
+import           Prelude                   hiding (foldr, length)
+import           Text.Regex.PCRE           (match)
 
-import Data.Aeson.Schema
-import Data.Aeson.Schema.Helpers
-import Data.Aeson.Schema.Choice
+import           Data.Aeson.Schema
+import           Data.Aeson.Schema.Choice
+import           Data.Aeson.Schema.Helpers
 
 type ValidationError = String
 type SchemaValidator = forall v. Validator v => v ValidationError

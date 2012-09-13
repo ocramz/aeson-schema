@@ -4,12 +4,12 @@ module Data.Aeson.Schema.Choice.TH
   ( generateChoice
   ) where
 
-import Control.Monad (forM)
-import Control.Applicative ((<$>))
-import Language.Haskell.TH
-import Data.Aeson (ToJSON (..), FromJSON (..))
-import Test.QuickCheck (Arbitrary (..), oneof)
-import Control.Applicative (Alternative (..))
+import           Control.Applicative ((<$>))
+import           Control.Applicative (Alternative (..))
+import           Control.Monad       (forM)
+import           Data.Aeson          (FromJSON (..), ToJSON (..))
+import           Language.Haskell.TH
+import           Test.QuickCheck     (Arbitrary (..), oneof)
 
 generateChoice :: Int -> Q [Dec]
 generateChoice n | n < 2 = return []

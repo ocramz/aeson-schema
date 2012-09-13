@@ -3,13 +3,13 @@
 
 module Data.Aeson.TH.Lift () where
 
-import Language.Haskell.TH
-import Language.Haskell.TH.Syntax (Lift (..))
-import Data.Text (Text, pack, unpack)
-import Data.Attoparsec.Number (Number (..))
-import qualified Data.HashMap.Lazy as HM
-import qualified Data.Vector as V
-import Data.Aeson (Value (..))
+import           Data.Aeson                 (Value (..))
+import           Data.Attoparsec.Number     (Number (..))
+import qualified Data.HashMap.Lazy          as HM
+import           Data.Text                  (Text, pack, unpack)
+import qualified Data.Vector                as V
+import           Language.Haskell.TH
+import           Language.Haskell.TH.Syntax (Lift (..))
 
 instance Lift Text where
   lift txt = [| pack $(lift (unpack txt)) |]

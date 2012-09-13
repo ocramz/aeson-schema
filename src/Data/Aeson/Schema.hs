@@ -1,4 +1,6 @@
-{-# LANGUAGE FlexibleInstances, TupleSections, EmptyDataDecls #-}
+{-# LANGUAGE EmptyDataDecls    #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE TupleSections     #-}
 
 module Data.Aeson.Schema
   ( SchemaType (..)
@@ -10,25 +12,26 @@ module Data.Aeson.Schema
   , empty
   ) where
 
-import Prelude hiding (foldr, length)
-import Data.Foldable (Foldable (..), toList)
-import Data.Traversable (traverse)
-import Data.Function (on)
-import Data.Functor ((<$>))
-import Control.Applicative ((<*>))
-import Control.Arrow (second)
-import Control.Monad (liftM)
-import Data.Aeson (Value (..), (.:?), (.!=), FromJSON (..))
-import Data.Aeson.Types (Parser, emptyObject, emptyArray)
-import qualified Data.Vector as V
-import qualified Data.HashMap.Strict as H
-import qualified Data.Map as M
-import Data.Text (Text, unpack)
-import Data.Attoparsec.Number (Number (..))
-import Text.Regex.PCRE (makeRegexM)
-import Text.Regex.PCRE.String (Regex)
+import           Control.Applicative      ((<*>))
+import           Control.Arrow            (second)
+import           Control.Monad            (liftM)
+import           Data.Aeson               (FromJSON (..), Value (..), (.!=),
+                                           (.:?))
+import           Data.Aeson.Types         (Parser, emptyArray, emptyObject)
+import           Data.Attoparsec.Number   (Number (..))
+import           Data.Foldable            (Foldable (..), toList)
+import           Data.Function            (on)
+import           Data.Functor             ((<$>))
+import qualified Data.HashMap.Strict      as H
+import qualified Data.Map                 as M
+import           Data.Text                (Text, unpack)
+import           Data.Traversable         (traverse)
+import qualified Data.Vector              as V
+import           Prelude                  hiding (foldr, length)
+import           Text.Regex.PCRE          (makeRegexM)
+import           Text.Regex.PCRE.String   (Regex)
 
-import Data.Aeson.Schema.Choice
+import           Data.Aeson.Schema.Choice
 
 type Map a = H.HashMap Text a
 
