@@ -4,17 +4,12 @@ module Data.Aeson.Schema.Examples
   ( examples
   ) where
 
-import           Data.Aeson        (Result (..), Value, fromJSON)
+import           Data.Aeson        (Value)
 import           Data.Aeson.LitQQ  (aesonLitQQ)
 import qualified Data.Map          as M
 import           Data.Text         (Text)
 
 import           Data.Aeson.Schema
-
-parseSchema :: Value -> IO (Schema Text)
-parseSchema v = case fromJSON v :: Result (Schema Text) of
-  Error e -> fail $ "invalid schema: " ++ e
-  Success schema -> return schema
 
 examples :: (String -> IO () -> a)
          -> (Graph Schema Text -> Schema Text -> Value -> IO ())
@@ -22,7 +17,7 @@ examples :: (String -> IO () -> a)
          -> [a]
 examples testCase assertValid' assertInvalid' =
   [ testCase "type: \"number\"" $ do
-      schema <- parseSchema [aesonLitQQ| { "type": "number" } |]
+      let schema = [schemaQQ| { "type": "number" } |]
       assertValid schema [aesonLitQQ| 3 |]
       assertValid schema [aesonLitQQ| 3.5 |]
       assertInvalid schema [aesonLitQQ| true |]
@@ -31,7 +26,7 @@ examples testCase assertValid' assertInvalid' =
       assertInvalid schema [aesonLitQQ| ["eins", "zwei"] |]
       assertInvalid schema [aesonLitQQ| null |]
   , testCase "type: \"integer\"" $ do
-      schema <- parseSchema [aesonLitQQ| { "type": "integer" } |]
+      let schema = [schemaQQ| { "type": "integer" } |]
       assertValid schema [aesonLitQQ| 3 |]
       assertInvalid schema [aesonLitQQ| 3.5 |]
       assertInvalid schema [aesonLitQQ| true |]
@@ -40,7 +35,7 @@ examples testCase assertValid' assertInvalid' =
       assertInvalid schema [aesonLitQQ| ["eins", "zwei"] |]
       assertInvalid schema [aesonLitQQ| null |]
   , testCase "maximum and minimum" $ do
-      schemaMinimum3 <- parseSchema [aesonLitQQ| { "type": "number", "minimum": 3 } |]
+      let schemaMinimum3 = [schemaQQ| { "type": "number", "minimum": 3 } |]
       assertInvalid schemaMinimum3 [aesonLitQQ| 2 |]
       assertValid schemaMinimum3 [aesonLitQQ| 3 |]
       assertValid schemaMinimum3 [aesonLitQQ| 4 |]
@@ -52,7 +47,7 @@ examples testCase assertValid' assertInvalid' =
       assertInvalid schemaExclusiveMinimum3 [aesonLitQQ| 2 |]
       assertInvalid schemaExclusiveMinimum3 [aesonLitQQ| 3 |]
       assertValid schemaExclusiveMinimum3 [aesonLitQQ| 4 |]
-      schemaMaximum3 <- parseSchema [aesonLitQQ| { "type": "number", "maximum": 3 } |]
+      let schemaMaximum3 = [schemaQQ| { "type": "number", "maximum": 3 } |]
       assertValid schemaMaximum3 [aesonLitQQ| 2 |]
       assertValid schemaMaximum3 [aesonLitQQ| 3 |]
       assertInvalid schemaMaximum3 [aesonLitQQ| 4 |]
@@ -65,19 +60,19 @@ examples testCase assertValid' assertInvalid' =
       assertInvalid schemaExclusiveMaximum3 [aesonLitQQ| 3 |]
       assertInvalid schemaExclusiveMaximum3 [aesonLitQQ| 4 |]
   , testCase "divisibleBy" $ do
-      by2 <- parseSchema [aesonLitQQ| { "type": "number", "divisibleBy": 2 } |]
+      let by2 = [schemaQQ| { "type": "number", "divisibleBy": 2 } |]
       assertValid by2 [aesonLitQQ| 2 |]
       assertValid by2 [aesonLitQQ| 4 |]
       assertValid by2 [aesonLitQQ| 0 |]
       assertInvalid by2 [aesonLitQQ| 1 |]
       assertInvalid by2 [aesonLitQQ| 3 |]
-      byOneAndHalf <- parseSchema [aesonLitQQ| { "type": "number", "divisibleBy": 1.5 }]
+      let byOneAndHalf = [schemaQQ| { "type": "number", "divisibleBy": 1.5 }]
       assertValid byOneAndHalf [aesonLitQQ| 1.5 |]
       assertValid byOneAndHalf [aesonLitQQ| 3 |]
       assertValid byOneAndHalf [aesonLitQQ| 4.5 |]
       assertInvalid byOneAndHalf [aesonLitQQ| 2.5 |]
   , testCase "type: \"string\"" $ do
-      schema <- parseSchema [aesonLitQQ| { "type": "string" } |]
+      let schema = [schemaQQ| { "type": "string" } |]
       assertInvalid schema [aesonLitQQ| 3 |]
       assertInvalid schema [aesonLitQQ| true |]
       assertValid schema [aesonLitQQ| "nobody expects the ..." |]
@@ -85,23 +80,23 @@ examples testCase assertValid' assertInvalid' =
       assertInvalid schema [aesonLitQQ| ["eins", "zwei"] |]
       assertInvalid schema [aesonLitQQ| null |]
   , testCase "minLength and maxLength" $ do
-      minLength2 <- parseSchema [aesonLitQQ| { "type": "string", "minLength": 2 } |]
+      let minLength2 = [schemaQQ| { "type": "string", "minLength": 2 } |]
       assertInvalid minLength2 [aesonLitQQ| "" |]
       assertInvalid minLength2 [aesonLitQQ| "a" |]
       assertValid minLength2 [aesonLitQQ| "aa" |]
-      maxLength5 <- parseSchema [aesonLitQQ| { "type": "string", "maxLength": 5 } |]
+      let maxLength5 = [schemaQQ| { "type": "string", "maxLength": 5 } |]
       assertValid maxLength5 [aesonLitQQ| "" |]
       assertValid maxLength5 [aesonLitQQ| "lorem" |]
       assertInvalid maxLength5 [aesonLitQQ| "lorem ipsum" |]
   , testCase "pattern" $ do
-      notEmptyString <- parseSchema [aesonLitQQ| { "type": "string", "pattern": ".+" } |]
+      let notEmptyString = [schemaQQ| { "type": "string", "pattern": ".+" } |]
       assertInvalid notEmptyString ""
       assertValid notEmptyString "one does not simply ..."
-      letterDigitAlternating <- parseSchema [aesonLitQQ| { "type": "string", "pattern": "^([a-z][0-9])+$" } |]
+      let letterDigitAlternating = [schemaQQ| { "type": "string", "pattern": "^([a-z][0-9])+$" } |]
       assertValid letterDigitAlternating "h8w2o8e3"
       assertInvalid letterDigitAlternating "h8w2o8e35"
   , testCase "type: \"boolean\"" $ do
-      schema <- parseSchema [aesonLitQQ| { "type": "boolean" } |]
+      let schema = [schemaQQ| { "type": "boolean" } |]
       assertInvalid schema [aesonLitQQ| 3 |]
       assertValid schema [aesonLitQQ| true |]
       assertInvalid schema [aesonLitQQ| "nobody expects the ..." |]
@@ -109,7 +104,7 @@ examples testCase assertValid' assertInvalid' =
       assertInvalid schema [aesonLitQQ| ["eins", "zwei"] |]
       assertInvalid schema [aesonLitQQ| null |]
   , testCase "type: \"null\"" $ do
-      schema <- parseSchema [aesonLitQQ| { "type": "null" } |]
+      let schema = [schemaQQ| { "type": "null" } |]
       assertInvalid schema [aesonLitQQ| 3 |]
       assertInvalid schema [aesonLitQQ| true |]
       assertInvalid schema [aesonLitQQ| "nobody expects the ..." |]
@@ -117,7 +112,7 @@ examples testCase assertValid' assertInvalid' =
       assertInvalid schema [aesonLitQQ| ["eins", "zwei"] |]
       assertValid schema [aesonLitQQ| null |]
   , testCase "type: \"array\"" $ do
-      schema <- parseSchema [aesonLitQQ| { "type": "array" } |]
+      let schema = [schemaQQ| { "type": "array" } |]
       assertInvalid schema [aesonLitQQ| 3 |]
       assertInvalid schema [aesonLitQQ| true |]
       assertInvalid schema [aesonLitQQ| "nobody expects the ..." |]
@@ -125,29 +120,29 @@ examples testCase assertValid' assertInvalid' =
       assertValid schema [aesonLitQQ| ["eins", "zwei"] |]
       assertInvalid schema [aesonLitQQ| null |]
   , testCase "minItems and maxItems" $ do
-      min3 <- parseSchema [aesonLitQQ| { "type": "array", "minItems": 3 } |]
+      let min3 = [schemaQQ| { "type": "array", "minItems": 3 } |]
       assertInvalid min3 [aesonLitQQ| [] |]
       assertInvalid min3 [aesonLitQQ| [1, true] |]
       assertValid min3 [aesonLitQQ| [1, true, null] |]
-      max3 <- parseSchema [aesonLitQQ| { "type": "array", "maxItems": 3 } |]
+      let max3 = [schemaQQ| { "type": "array", "maxItems": 3 } |]
       assertValid max3 [aesonLitQQ| [] |]
       assertValid max3 [aesonLitQQ| [1, true, null] |]
       assertInvalid max3 [aesonLitQQ| [1, true, null, "lorem"] |]
   , testCase "uniqueItems" $ do
-      schema <- parseSchema [aesonLitQQ| { "type": "array", "uniqueItems": true } |]
+      let schema = [schemaQQ| { "type": "array", "uniqueItems": true } |]
       assertValid schema [aesonLitQQ| [] |]
       assertValid schema [aesonLitQQ| [1, 2] |]
       assertInvalid schema [aesonLitQQ| [1, 2, 1] |]
       assertValid schema [aesonLitQQ| [{ "lorem": "ipsum" }, 2, { "ipsum": "lorem" }] |]
       assertInvalid schema [aesonLitQQ| [{ "lorem": "ipsum" }, 2, { "lorem": "ipsum" }] |]
   , testCase "items" $ do
-      onlyNumbers <- parseSchema [aesonLitQQ| { "type": "array", "items": { "type": "number" } } |]
+      let onlyNumbers = [schemaQQ| { "type": "array", "items": { "type": "number" } } |]
       assertValid onlyNumbers [aesonLitQQ| [1, 2, 3] |]
       assertInvalid onlyNumbers [aesonLitQQ| [1, 2, 3, "four"] |]
-      onlyStrings <- parseSchema [aesonLitQQ| { "type": "array", "items": { "type": "string" } } |]
+      let onlyStrings = [schemaQQ| { "type": "array", "items": { "type": "string" } } |]
       assertValid onlyStrings [aesonLitQQ| ["one", "two", "three"] |]
       assertInvalid onlyStrings [aesonLitQQ| ["one", "two", "three", 4] |]
-      stringNumberNull <- parseSchema [aesonLitQQ| {
+      let stringNumberNull = [schemaQQ| {
         "type": "array",
         "items": [
           { "type": "string" },
@@ -164,21 +159,21 @@ examples testCase assertValid' assertInvalid' =
       assertInvalid stringNumberNull [aesonLitQQ| ["lorem", 3, 4] |]
       assertValid stringNumberNull [aesonLitQQ| ["lorem", 3, null, 1, 2, 3] |]
   , testCase "additionalItems" $ do
-      allowed <- parseSchema [aesonLitQQ| {
+      let allowed = [schemaQQ| {
         "type": "array",
         "items": [ { "type": "string" }, { "type": "number" } ],
         "additionalItems": true
       } |]
       assertValid allowed [aesonLitQQ| ["abc", 123] |]
       assertValid allowed [aesonLitQQ| ["abc", 123, [], null, true] |]
-      forbidden <- parseSchema [aesonLitQQ| {
+      let forbidden = [schemaQQ| {
         "type": "array",
         "items": [ { "type": "string" }, { "type": "number" } ],
         "additionalItems": false
       } |]
       assertValid forbidden [aesonLitQQ| ["abc", 123] |]
       assertInvalid forbidden [aesonLitQQ| ["abc", 123, [], null, true] |]
-      onlyNulls <- parseSchema [aesonLitQQ| {
+      let onlyNulls = [schemaQQ| {
         "type": "array",
         "items": [ { "type": "string" }, { "type": "number" } ],
         "additionalItems": { "type": "null" }
@@ -187,7 +182,7 @@ examples testCase assertValid' assertInvalid' =
       assertInvalid onlyNulls [aesonLitQQ| ["abc", 123, [], null, true] |]
       assertValid onlyNulls [aesonLitQQ| ["abc", 123, null, null, null, null] |]
   , testCase "type: \"object\"" $ do
-      schema <- parseSchema [aesonLitQQ| { "type": "object" } |]
+      let schema = [schemaQQ| { "type": "object" } |]
       assertInvalid schema [aesonLitQQ| 3 |]
       assertInvalid schema [aesonLitQQ| true |]
       assertInvalid schema [aesonLitQQ| "nobody expects the ..." |]
@@ -195,7 +190,7 @@ examples testCase assertValid' assertInvalid' =
       assertInvalid schema [aesonLitQQ| ["eins", "zwei"] |]
       assertInvalid schema [aesonLitQQ| null |]
   , testCase "properties" $ do
-      schema <- parseSchema [aesonLitQQ| {
+      let schema = [schemaQQ| {
         "type": "object",
         "properties": {
           "aNumber": { "type": "number" },
@@ -209,7 +204,7 @@ examples testCase assertValid' assertInvalid' =
       assertInvalid schema [aesonLitQQ| { "aNumber": "deux" } |]
       assertInvalid schema [aesonLitQQ| { "aString": 42 } |]
   , testCase "patternProperties" $ do
-      schema <- parseSchema [aesonLitQQ| {
+      let schema = [schemaQQ| {
         "type": "object",
         "properties": {
           "positiveNumber": {
@@ -229,7 +224,7 @@ examples testCase assertValid' assertInvalid' =
       assertValid schema [aesonLitQQ| { "fooString": "foo", "barString": "bar" } |]
       assertInvalid schema [aesonLitQQ| { "fooString": null, "barString": "bar" } |]
   , testCase "additionalProperties" $ do
-      additionalNumbers <- parseSchema [aesonLitQQ| {
+      let additionalNumbers = [schemaQQ| {
         "type": "object",
         "properties": { "null": { "type": "null" } },
         "patternProperties": {
@@ -244,7 +239,7 @@ examples testCase assertValid' assertInvalid' =
         "theLastThing": 999
       } |]
       assertInvalid additionalNumbers [aesonLitQQ| { "null": null, "notANumber": true } |]
-      noAdditionalProperties <- parseSchema [aesonLitQQ| {
+      let noAdditionalProperties = [schemaQQ| {
         "type": "object",
         "properties": { "null": { "type": "null" } },
         "patternProperties": {
@@ -260,12 +255,12 @@ examples testCase assertValid' assertInvalid' =
         "theLastThing": 999
       } |]
   , testCase "enum" $ do
-      testStrings <- parseSchema [aesonLitQQ| { "type": "string", "enum": ["foo", "bar", "blub"] } |]
+      let testStrings = [schemaQQ| { "type": "string", "enum": ["foo", "bar", "blub"] } |]
       assertValid testStrings "foo"
       assertValid testStrings "bar"
       assertValid testStrings "blub"
       assertInvalid testStrings "lorem"
-      oneTwoMapping <- parseSchema [aesonLitQQ| {
+      let oneTwoMapping = [schemaQQ| {
         "type": "object",
         "enum": [{ "eins": 1, "zwei": 2 }, { "un": 1, "deux": 2 }]
       } |]
@@ -275,7 +270,7 @@ examples testCase assertValid' assertInvalid' =
       assertValid oneTwoMapping [aesonLitQQ| { "un": 1, "deux": 2 } |]
       assertInvalid oneTwoMapping [aesonLitQQ| { "one": 1, "two": 2 } |]
   , testCase "type: \"any\"" $ do
-      schema <- parseSchema [aesonLitQQ| {
+      let schema = [schemaQQ| {
         "type": "any",
         "minimum": 2,
         "maxItems": 2,
@@ -291,10 +286,10 @@ examples testCase assertValid' assertInvalid' =
       assertValid schema [aesonLitQQ| [true, false] |]
       assertInvalid schema [aesonLitQQ| [true, false, true] |]
   , testCase "disallow" $ do
-      onlyFloats <- parseSchema [aesonLitQQ| { "type": "number", "disallow": "integer" } |]
+      let onlyFloats = [schemaQQ| { "type": "number", "disallow": "integer" } |]
       assertInvalid onlyFloats [aesonLitQQ| 9 |]
       assertValid onlyFloats [aesonLitQQ| 9.75 |]
-      notLengthThree <- parseSchema [aesonLitQQ| {
+      let notLengthThree = [schemaQQ| {
         "type": "array",
         "disallow": [{
           "type": "array",
@@ -307,7 +302,7 @@ examples testCase assertValid' assertInvalid' =
       assertValid notLengthThree [aesonLitQQ| [1, 2] |]
       assertInvalid notLengthThree [aesonLitQQ| [1, 2, 3] |]
       assertValid notLengthThree [aesonLitQQ| [1, 2, 3, 4] |]
-      everythingExceptNumbers <- parseSchema [aesonLitQQ| { "disallow": "number" } |]
+      let everythingExceptNumbers = [schemaQQ| { "disallow": "number" } |]
       assertInvalid everythingExceptNumbers [aesonLitQQ| 3 |]
       assertInvalid everythingExceptNumbers [aesonLitQQ| 3.5 |]
       assertValid everythingExceptNumbers [aesonLitQQ| true |]
@@ -316,11 +311,11 @@ examples testCase assertValid' assertInvalid' =
       assertValid everythingExceptNumbers [aesonLitQQ| ["eins", "zwei"] |]
       assertValid everythingExceptNumbers [aesonLitQQ| null |]
   , testCase "format: \"regex\"" $ do
-      isRegex <- parseSchema [aesonLitQQ| { "type": "string", "format": "regex" } |]
+      let isRegex = [schemaQQ| { "type": "string", "format": "regex" } |]
       assertValid isRegex "([abc])+\\s+$"
       assertInvalid isRegex "^(abc]"
   , testCase "type: subschema" $ do
-      schema <- parseSchema [aesonLitQQ| {
+      let schema = [schemaQQ| {
         "type": [
           {
             "type": "object",
@@ -345,7 +340,7 @@ examples testCase assertValid' assertInvalid' =
       assertInvalid schema [aesonLitQQ| { "delete": 5, "retain": 76 } |]
       assertValid schema [aesonLitQQ| { "retain": 76 } |]
   , testCase "dependencies" $ do
-      aRequiresB <- parseSchema [aesonLitQQ| {
+      let aRequiresB = [schemaQQ| {
         "type": "object",
         "dependencies": { "a": "b" }
       } |]
@@ -353,7 +348,7 @@ examples testCase assertValid' assertInvalid' =
       assertValid aRequiresB [aesonLitQQ| { "b": false } |]
       assertValid aRequiresB [aesonLitQQ| { "a": true, "b": false } |]
       assertInvalid aRequiresB [aesonLitQQ| { "a": 3 } |]
-      aRequiresBToBeANumber <- parseSchema [aesonLitQQ| {
+      let aRequiresBToBeANumber = [schemaQQ| {
         "type": "object",
         "dependencies": { "a": { "properties": { "b": { "type": "number" } } } }
       } |]
@@ -362,7 +357,7 @@ examples testCase assertValid' assertInvalid' =
       assertValid aRequiresBToBeANumber [aesonLitQQ| { "a": "yes, we can" } |]
       assertInvalid aRequiresBToBeANumber [aesonLitQQ| { "a": "yes, we can", "b": "lorem" } |]
       assertValid aRequiresBToBeANumber [aesonLitQQ| { "a": "hi there", "b": 42 } |]
-      aDisallowsB <- parseSchema [aesonLitQQ| {
+      let aDisallowsB = [schemaQQ| {
         "type": "object",
         "dependencies": {
           "a": {
@@ -378,7 +373,7 @@ examples testCase assertValid' assertInvalid' =
       assertValid aDisallowsB [aesonLitQQ| { "b": 42 } |]
       assertInvalid aDisallowsB [aesonLitQQ| { "a": "lorem", "b": 42 } |]
   , testCase "required" $ do
-      schema <- parseSchema [aesonLitQQ| {
+      let schema = [schemaQQ| {
         "type": "object",
         "properties": {
           "a": { "required": true }
@@ -387,7 +382,7 @@ examples testCase assertValid' assertInvalid' =
       assertInvalid schema [aesonLitQQ| {} |]
       assertValid schema [aesonLitQQ| { "a": [1, 2, 3] } |]
   , testCase "extends" $ do
-      schema <- parseSchema [aesonLitQQ| {
+      let schema = [schemaQQ| {
         "type": "object",
         "properties": {
           "a": { "type": "number" }
@@ -412,9 +407,10 @@ examples testCase assertValid' assertInvalid' =
       assertInvalid schema [aesonLitQQ| { "a": -1, "b": -10 } |]
       assertValid schema [aesonLitQQ| { "a": -1, "ba": -10 } |]
   , testCase "$ref" $ do
-      a <- parseSchema [aesonLitQQ| { "$ref": "b", "minimum": 3 } |]
-      b <- parseSchema [aesonLitQQ| { "type": "number", "maximum": 2 } |]
-      let graph = M.fromList [("a", a), ("b", b)]
+      let
+        a = [schemaQQ| { "$ref": "b", "minimum": 3 } |]
+        b = [schemaQQ| { "type": "number", "maximum": 2 } |]
+        graph = M.fromList [("a", a), ("b", b)]
       assertValid' graph a [aesonLitQQ| 1 |]
       assertInvalid' graph a [aesonLitQQ| 4 |]
   ]

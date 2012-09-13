@@ -1,4 +1,6 @@
+{-# OPTIONS_GHC -fno-warn-missing-fields #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE TemplateHaskell   #-}
 {-# LANGUAGE TupleSections     #-}
 
 module Data.Aeson.Schema.Types
@@ -9,28 +11,39 @@ module Data.Aeson.Schema.Types
   , Schema (..)
   , Graph
   , empty
+  , schemaQQ
   ) where
 
-import           Control.Applicative      ((<*>))
-import           Control.Arrow            (second)
-import           Control.Monad            (liftM)
-import           Data.Aeson               (FromJSON (..), Value (..), (.!=),
-                                           (.:?))
-import           Data.Aeson.Types         (Parser, emptyArray, emptyObject)
-import           Data.Attoparsec.Number   (Number (..))
-import           Data.Foldable            (Foldable (..), toList)
-import           Data.Function            (on)
-import           Data.Functor             ((<$>))
-import qualified Data.HashMap.Strict      as H
-import qualified Data.Map                 as M
-import           Data.Text                (Text, unpack)
-import           Data.Traversable         (traverse)
-import qualified Data.Vector              as V
-import           Prelude                  hiding (foldr, length)
-import           Text.Regex.PCRE          (makeRegexM)
-import           Text.Regex.PCRE.String   (Regex)
-
+import           Control.Applicative        ((<*>))
+import           Control.Applicative        ((*>), (<*))
+import           Control.Arrow              (second)
+import           Control.Monad              (liftM)
+import           Data.Aeson                 (FromJSON (..), Value (..), (.!=),
+                                             (.:?))
+import           Data.Aeson.Parser          (value')
 import           Data.Aeson.Schema.Choice
+import           Data.Aeson.Types           (Parser, emptyArray, emptyObject,
+                                             parseEither)
+import           Data.Attoparsec.Char8      (skipSpace)
+import           Data.Attoparsec.Lazy       (Result (..), parse)
+import           Data.Attoparsec.Number     (Number (..))
+import           Data.ByteString.Lazy.Char8 (pack)
+import           Data.Foldable              (Foldable (..), toList)
+import           Data.Function              (on)
+import           Data.Functor               ((<$>))
+import qualified Data.HashMap.Strict        as H
+import qualified Data.Map                   as M
+import           Data.Maybe                 (catMaybes)
+import           Data.Text                  (Text, unpack)
+import           Data.Traversable           (traverse)
+import qualified Data.Vector                as V
+import           Language.Haskell.TH.Quote  (QuasiQuoter (..))
+import           Language.Haskell.TH        (varE, recUpdE)
+import           Language.Haskell.TH.Syntax (Lift (..))
+import           Prelude                    hiding (foldr, length)
+import           Text.Regex.PCRE            (makeRegexM)
+import           Text.Regex.PCRE.String     (Regex)
+import           Data.Aeson.TH.Lift         ()
 
 -- | Compiled regex and its source
 data Pattern = Pattern { patternSource :: Text, patternCompiled :: Regex }
@@ -45,11 +58,14 @@ instance FromJSON Pattern where
   parseJSON (String s) = mkPattern s
   parseJSON _ = fail "only strings can be parsed as patterns"
 
+instance Lift Pattern where
+  lift (Pattern src _) = [| let Right p = mkPattern src in p |]
+
 -- | Compile a regex to a pattern, reporting errors with fail
 mkPattern :: (Monad m) => Text -> m Pattern
 mkPattern t = liftM (Pattern t) $ makeRegexM (unpack t)
 
--- | Primitive JSON types 
+-- | Primitive JSON types
 data SchemaType = StringType
                 | NumberType
                 | IntegerType
@@ -72,6 +88,16 @@ instance FromJSON SchemaType where
     "any"     -> return AnyType
     _         -> fail $ "not a valid type: " ++ unpack t
   parseJSON _ = fail "not a string"
+
+instance Lift SchemaType where
+  lift StringType  = [| StringType |]
+  lift NumberType  = [| NumberType |]
+  lift IntegerType = [| IntegerType |]
+  lift BooleanType = [| BooleanType |]
+  lift ObjectType  = [| ObjectType |]
+  lift ArrayType   = [| ArrayType |]
+  lift NullType    = [| NullType |]
+  lift AnyType     = [| AnyType |]
 
 type Map a = H.HashMap Text a
 
@@ -198,6 +224,47 @@ instance FromJSON ref => FromJSON (Schema ref) where
       parseDependency val = parseJSON val
   parseJSON _ = fail "a schema must be a JSON object"
 
+instance (Eq ref, Lift ref) => Lift (Schema ref) where
+  lift schema = case updates of
+    [] -> varE 'empty
+    _  -> recUpdE (varE 'empty) updates
+    where
+      updates = catMaybes
+        [ field 'schemaType schemaType
+        , field 'schemaProperties schemaProperties
+        , field 'schemaPatternProperties schemaPatternProperties
+        , field 'schemaAdditionalProperties schemaAdditionalProperties
+        , field 'schemaItems schemaItems
+        , field 'schemaAdditionalItems schemaAdditionalItems
+        , field 'schemaRequired schemaRequired
+        , field 'schemaDependencies schemaDependencies
+        , field 'schemaMinimum schemaMinimum
+        , field 'schemaMaximum schemaMaximum
+        , field 'schemaExclusiveMinimum schemaExclusiveMinimum
+        , field 'schemaExclusiveMaximum schemaExclusiveMaximum
+        , field 'schemaMinItems schemaMinItems
+        , field 'schemaMaxItems schemaMaxItems
+        , field 'schemaUniqueItems schemaUniqueItems
+        , field 'schemaPattern schemaPattern
+        , field 'schemaMinLength schemaMinLength
+        , field 'schemaMaxLength schemaMaxLength
+        , field 'schemaEnum schemaEnum
+        , field 'schemaEnumDescriptions schemaEnumDescriptions
+        , field 'schemaDefault schemaDefault
+        , field 'schemaTitle schemaTitle
+        , field 'schemaDescription schemaDescription
+        , field 'schemaFormat schemaFormat
+        , field 'schemaDivisibleBy schemaDivisibleBy
+        , field 'schemaDisallow schemaDisallow
+        , field 'schemaExtends schemaExtends
+        , field 'schemaId schemaId
+        , fmap ('schemaDRef,) . lift . Just <$> schemaDRef schema
+        , field 'schemaDSchema schemaDSchema
+        ]
+      field name accessor = if accessor schema == accessor empty
+        then Nothing
+        else Just $ (name,) <$> lift (accessor schema)
+
 -- | The empty schema accepts any JSON value.
 empty :: Schema ref
 empty = Schema
@@ -232,3 +299,12 @@ empty = Schema
   , schemaDRef = Nothing
   , schemaDSchema = Nothing
   }
+
+schemaQQ :: QuasiQuoter
+schemaQQ = QuasiQuoter { quoteExp = quote }
+  where
+    quote jsonStr = case parse (skipSpace *> value' <* skipSpace) (pack jsonStr) of
+      Done _ json -> case parseEither parseJSON json :: Either String (Schema Text) of
+        Left e -> fail e
+        Right s -> lift s
+      _ -> fail "not a valid JSON value"

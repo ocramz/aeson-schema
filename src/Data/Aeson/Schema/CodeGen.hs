@@ -92,69 +92,6 @@ instance Quasi CodeGenM where
   qRunIO = CodeGenM . MT.lift . runIO
   qAddDependentFile = CodeGenM . MT.lift . addDependentFile
 
-instance Lift SchemaType where
-  lift StringType  = [| StringType |]
-  lift NumberType  = [| NumberType |]
-  lift IntegerType = [| IntegerType |]
-  lift BooleanType = [| BooleanType |]
-  lift ObjectType  = [| ObjectType |]
-  lift ArrayType   = [| ArrayType |]
-  lift NullType    = [| NullType |]
-  lift AnyType     = [| AnyType |]
-
-instance (Lift a, Lift b) => Lift (Choice2 a b) where
-  lift (Choice1of2 a) = [| Choice1of2 a |]
-  lift (Choice2of2 b) = [| Choice2of2 b |]
-
-instance (Lift a, Lift b, Lift c) => Lift (Choice3 a b c) where
-  lift (Choice1of3 a) = [| Choice1of3 a |]
-  lift (Choice2of3 b) = [| Choice2of3 b |]
-  lift (Choice3of3 c) = [| Choice2of3 c |]
-
-instance Lift Pattern where
-  lift (Pattern src _) = [| let Right p = mkPattern src in p |]
-
-instance Lift (Schema Text) where
-  lift schema = case updates of
-    [] -> varE 'empty
-    _  -> recUpdE (varE 'empty) updates
-    where
-      updates = catMaybes
-        [ field 'schemaType schemaType
-        , field 'schemaProperties schemaProperties
-        , field 'schemaPatternProperties schemaPatternProperties
-        , field 'schemaAdditionalProperties schemaAdditionalProperties
-        , field 'schemaItems schemaItems
-        , field 'schemaAdditionalItems schemaAdditionalItems
-        , field 'schemaRequired schemaRequired
-        , field 'schemaDependencies schemaDependencies
-        , field 'schemaMinimum schemaMinimum
-        , field 'schemaMaximum schemaMaximum
-        , field 'schemaExclusiveMinimum schemaExclusiveMinimum
-        , field 'schemaExclusiveMaximum schemaExclusiveMaximum
-        , field 'schemaMinItems schemaMinItems
-        , field 'schemaMaxItems schemaMaxItems
-        , field 'schemaUniqueItems schemaUniqueItems
-        , field 'schemaPattern schemaPattern
-        , field 'schemaMinLength schemaMinLength
-        , field 'schemaMaxLength schemaMaxLength
-        , field 'schemaEnum schemaEnum
-        , field 'schemaEnumDescriptions schemaEnumDescriptions
-        , field 'schemaDefault schemaDefault
-        , field 'schemaTitle schemaTitle
-        , field 'schemaDescription schemaDescription
-        , field 'schemaFormat schemaFormat
-        , field 'schemaDivisibleBy schemaDivisibleBy
-        , field 'schemaDisallow schemaDisallow
-        , field 'schemaExtends schemaExtends
-        , field 'schemaId schemaId
-        , fmap ('schemaDRef,) . lift . Just <$> schemaDRef schema
-        , field 'schemaDSchema schemaDSchema
-        ]
-      field name accessor = if accessor schema == accessor empty
-        then Nothing
-        else Just $ (name,) <$> lift (accessor schema)
-
 instance (Lift k, Lift v) => Lift (M.Map k v) where
   lift m = [| M.fromList $(lift $ M.toList m) |]
 
