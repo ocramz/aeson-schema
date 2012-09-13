@@ -1,0 +1,2 @@
+:set -XQuasiQuotes
+:m +Data.Aeson Data.Aeson.Schema
