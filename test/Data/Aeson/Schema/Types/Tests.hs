@@ -2,18 +2,18 @@ module Data.Aeson.Schema.Types.Tests
   ( tests
   ) where
 
-import Test.Framework
-import Test.Framework.Providers.HUnit
-import qualified Test.HUnit as HU
+import           Test.Framework
+import           Test.Framework.Providers.HUnit
+import qualified Test.HUnit                     as HU
 
-import Data.Foldable (toList)
-import Data.Aeson
-import Data.Text ()
-import qualified Data.ByteString.Lazy as L
-import qualified Data.HashMap.Strict as H
+import           Data.Aeson
+import qualified Data.ByteString.Lazy           as L
+import           Data.Foldable                  (toList)
+import qualified Data.HashMap.Strict            as H
+import           Data.Text                      (Text)
 
-import Data.Aeson.Schema
-import Data.Aeson.Schema.Choice
+import           Data.Aeson.Schema
+import           Data.Aeson.Schema.Choice
 
 data TestFunctor a = TestFunctor Int a
 
@@ -26,7 +26,7 @@ tests =
       schemaBS <- L.readFile "examples/schema.json"
       case decode schemaBS :: Maybe Value of
         Nothing -> HU.assertFailure "JSON syntax error"
-        Just val -> case fromJSON val :: Result (Schema String) of
+        Just val -> case fromJSON val :: Result (Schema Text) of
           Error e -> HU.assertFailure e
           Success schema -> do
             Just "http://json-schema.org/schema#" HU.@=? schemaId schema

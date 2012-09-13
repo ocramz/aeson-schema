@@ -4,16 +4,16 @@ module Data.Aeson.LitQQ
   ( aesonLitQQ
   ) where
 
-import Data.Aeson.Parser (value')
-import Language.Haskell.TH (ExpQ)
-import Language.Haskell.TH.Syntax (lift)
-import Language.Haskell.TH.Quote (QuasiQuoter (..))
-import Data.ByteString.Lazy.Char8 (pack)
-import Data.Attoparsec.Lazy (parse, Result (..))
-import Data.Attoparsec.Char8 (skipSpace)
-import Control.Applicative ((<*), (*>))
+import           Control.Applicative        ((*>), (<*))
+import           Data.Aeson.Parser          (value')
+import           Data.Attoparsec.Char8      (skipSpace)
+import           Data.Attoparsec.Lazy       (Result (..), parse)
+import           Data.ByteString.Lazy.Char8 (pack)
+import           Language.Haskell.TH        (ExpQ)
+import           Language.Haskell.TH.Quote  (QuasiQuoter (..))
+import           Language.Haskell.TH.Syntax (lift)
 
-import Data.Aeson.Schema.CodeGen () -- Lift instances
+import           Data.Aeson.Schema.CodeGen  ()
 
 aesonLitQQ :: QuasiQuoter
 aesonLitQQ = QuasiQuoter

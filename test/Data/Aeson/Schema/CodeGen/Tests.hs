@@ -1,47 +1,58 @@
 {-# OPTIONS_GHC -fno-warn-orphans #-}
-{-# LANGUAGE FlexibleInstances, ExistentialQuantification, RankNTypes, ScopedTypeVariables, ImpredicativeTypes, TupleSections #-}
+{-# LANGUAGE ExistentialQuantification #-}
+{-# LANGUAGE FlexibleInstances         #-}
+{-# LANGUAGE ImpredicativeTypes        #-}
+{-# LANGUAGE RankNTypes                #-}
+{-# LANGUAGE ScopedTypeVariables       #-}
+{-# LANGUAGE TupleSections             #-}
 
 module Data.Aeson.Schema.CodeGen.Tests
   ( tests
   ) where
 
-import Test.Framework
-import Test.Framework.Providers.QuickCheck2
-import Test.QuickCheck hiding (Result (..))
-import Test.QuickCheck.Property (morallyDubiousIOProperty, Result (..), succeeded, failed)
-import Test.Framework.Providers.HUnit
-import qualified Test.HUnit as HU
+import           Test.Framework
+import           Test.Framework.Providers.HUnit
+import           Test.Framework.Providers.QuickCheck2
+import qualified Test.HUnit                           as HU
+import           Test.QuickCheck                      hiding (Result (..))
+import           Test.QuickCheck.Property             (Result (..), failed,
+                                                       morallyDubiousIOProperty,
+                                                       succeeded)
 
-import System.IO (hClose)
-import System.IO.Temp (withSystemTempFile)
-import Control.Applicative (pure, (<$>))
-import Data.Char (isAscii, isPrint)
-import Control.Monad (liftM2, (>=>), forever)
-import Control.Monad.Trans (liftIO)
-import Control.Concurrent (forkIO)
-import Control.Concurrent.MVar (newEmptyMVar, putMVar, takeMVar)
-import Control.Concurrent.Chan (Chan, newChan, writeChan, readChan)
-import Data.Hashable (Hashable)
-import qualified Data.HashMap.Lazy as HM
-import Data.Text (Text, pack, unpack)
-import qualified Data.Text as T
-import qualified Data.Text.IO as TIO
-import Data.Maybe (isNothing, listToMaybe)
-import qualified Data.Map as M
-import qualified Data.Vector as V
-import Data.Aeson (Value (..))
-import Data.Attoparsec.Number (Number (..))
-import qualified Language.Haskell.Interpreter as Hint
-import Language.Haskell.TH (runQ)
-import Language.Haskell.TH.Ppr (pprint)
-import qualified Language.Haskell.TH.Syntax as THS
+import           Control.Applicative                  (pure, (<$>))
+import           Control.Concurrent                   (forkIO)
+import           Control.Concurrent.Chan              (Chan, newChan, readChan,
+                                                       writeChan)
+import           Control.Concurrent.MVar              (newEmptyMVar, putMVar,
+                                                       takeMVar)
+import           Control.Monad                        (forever, liftM2, (>=>))
+import           Control.Monad.Trans                  (liftIO)
+import           Data.Aeson                           (Value (..))
+import           Data.Attoparsec.Number               (Number (..))
+import           Data.Char                            (isAscii, isPrint)
+import           Data.Hashable                        (Hashable)
+import qualified Data.HashMap.Lazy                    as HM
+import qualified Data.Map                             as M
+import           Data.Maybe                           (isNothing, listToMaybe)
+import           Data.Text                            (Text, pack, unpack)
+import qualified Data.Text                            as T
+import qualified Data.Text.IO                         as TIO
+import qualified Data.Vector                          as V
+import qualified Language.Haskell.Interpreter         as Hint
+import           Language.Haskell.TH                  (runQ)
+import           Language.Haskell.TH.Ppr              (pprint)
+import qualified Language.Haskell.TH.Syntax           as THS
+import           System.IO                            (hClose)
+import           System.IO.Temp                       (withSystemTempFile)
 
-import Data.Aeson.Schema
-import Data.Aeson.Schema.Choice
-import Data.Aeson.Schema.CodeGen (generateModule)
-import Data.Aeson.Schema.Helpers (formatValidators, replaceHiddenModules, getUsedModules)
+import           Data.Aeson.Schema
+import           Data.Aeson.Schema.Choice
+import           Data.Aeson.Schema.CodeGen            (generateModule)
+import           Data.Aeson.Schema.Helpers            (formatValidators,
+                                                       getUsedModules,
+                                                       replaceHiddenModules)
 
-import Data.Aeson.Schema.Examples (examples)
+import           Data.Aeson.Schema.Examples           (examples)
 
 instance Arbitrary Text where
   arbitrary = pack <$> arbitrary

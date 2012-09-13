@@ -1,9 +1,9 @@
-import Test.Framework
+import           Test.Framework
 
+import qualified Data.Aeson.Schema.Choice.Tests
+import qualified Data.Aeson.Schema.CodeGen.Tests
 import qualified Data.Aeson.Schema.Types.Tests
 import qualified Data.Aeson.Schema.Validator.Tests
-import qualified Data.Aeson.Schema.CodeGen.Tests
-import qualified Data.Aeson.Schema.Choice.Tests
 
 main :: IO ()
 main = defaultMain

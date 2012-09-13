@@ -4,12 +4,12 @@ module Data.Aeson.Schema.Examples
   ( examples
   ) where
 
-import Data.Aeson (Value, Result (..), fromJSON)
-import Data.Aeson.LitQQ (aesonLitQQ)
-import Data.Text (Text)
-import qualified Data.Map as M
+import           Data.Aeson        (Result (..), Value, fromJSON)
+import           Data.Aeson.LitQQ  (aesonLitQQ)
+import qualified Data.Map          as M
+import           Data.Text         (Text)
 
-import Data.Aeson.Schema
+import           Data.Aeson.Schema
 
 parseSchema :: Value -> IO (Schema Text)
 parseSchema v = case fromJSON v :: Result (Schema Text) of

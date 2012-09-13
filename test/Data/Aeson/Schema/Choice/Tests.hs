@@ -4,19 +4,18 @@ module Data.Aeson.Schema.Choice.Tests
   ( tests
   ) where
 
-import Test.Framework
-import Test.Framework.Providers.QuickCheck2
-import Test.QuickCheck (Gen, arbitrary)
-import Test.Framework.Providers.HUnit
-import qualified Test.HUnit as HU
+import           Test.Framework
+import           Test.Framework.Providers.HUnit
+import           Test.Framework.Providers.QuickCheck2
+import qualified Test.HUnit                           as HU
+import           Test.QuickCheck                      (Gen, arbitrary)
 
-import Data.Aeson
-import Data.Text ()
-import Data.List (nub)
-import Data.Vector (fromList)
-import Data.Char (toUpper)
+import           Data.Aeson
+import           Data.Char                            (toUpper)
+import           Data.List                            (nub)
+import           Data.Vector                          (fromList)
 
-import Data.Aeson.Schema.Choice
+import           Data.Aeson.Schema.Choice
 
 choiceShow3 :: Choice3 String Int Bool -> String
 choiceShow3 (Choice1of3 s) = s
