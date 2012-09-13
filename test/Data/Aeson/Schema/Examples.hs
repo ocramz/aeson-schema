@@ -39,7 +39,7 @@ examples testCase assertValid' assertInvalid' =
       assertInvalid schemaMinimum3 [aesonLitQQ| 2 |]
       assertValid schemaMinimum3 [aesonLitQQ| 3 |]
       assertValid schemaMinimum3 [aesonLitQQ| 4 |]
-      schemaExclusiveMinimum3 <- parseSchema [aesonLitQQ| {
+      let schemaExclusiveMinimum3 = [schemaQQ| {
         "type": "number",
         "minimum": 3,
         "exclusiveMinimum": true
@@ -51,7 +51,7 @@ examples testCase assertValid' assertInvalid' =
       assertValid schemaMaximum3 [aesonLitQQ| 2 |]
       assertValid schemaMaximum3 [aesonLitQQ| 3 |]
       assertInvalid schemaMaximum3 [aesonLitQQ| 4 |]
-      schemaExclusiveMaximum3 <- parseSchema [aesonLitQQ| {
+      let schemaExclusiveMaximum3 = [schemaQQ| {
         "type": "number",
         "maximum": 3,
         "exclusiveMaximum": true
