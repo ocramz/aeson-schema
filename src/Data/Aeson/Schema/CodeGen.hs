@@ -46,7 +46,7 @@ import           Data.Aeson.Schema
 import           Data.Aeson.Schema.Choice
 import           Data.Aeson.Schema.Helpers
 import           Data.Aeson.Schema.Validator
-import           Data.Aeson.TH.Lift
+import           Data.Aeson.TH.Lift ()
 
 
 data Declaration = Declaration Dec (Maybe Text)

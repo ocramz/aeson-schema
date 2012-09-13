@@ -3,12 +3,13 @@
 {-# LANGUAGE TupleSections     #-}
 
 module Data.Aeson.Schema
-  ( SchemaType (..)
+  (Pattern (..)
+  , mkPattern
+  , Map
+  , SchemaType (..)
   , Schema (..)
   , V3
   , Graph
-  , Pattern (..)
-  , mkPattern
   , empty
   ) where
 
@@ -33,8 +34,7 @@ import           Text.Regex.PCRE.String   (Regex)
 
 import           Data.Aeson.Schema.Choice
 
-type Map a = H.HashMap Text a
-
+-- | Compiled regex and its source
 data Pattern = Pattern { patternSource :: Text, patternCompiled :: Regex }
 
 instance Eq Pattern where
@@ -47,9 +47,11 @@ instance FromJSON Pattern where
   parseJSON (String s) = mkPattern s
   parseJSON _ = fail "only strings can be parsed as patterns"
 
+-- | Compile a regex to a pattern, reporting errors with fail
 mkPattern :: (Monad m) => Text -> m Pattern
 mkPattern t = liftM (Pattern t) $ makeRegexM (unpack t)
 
+-- | Primitive JSON types 
 data SchemaType = StringType
                 | NumberType
                 | IntegerType
@@ -57,7 +59,7 @@ data SchemaType = StringType
                 | ObjectType
                 | ArrayType
                 | NullType
-                | AnyType
+                | AnyType -- ^ any of the above
                 deriving (Eq, Show, Read)
 
 instance FromJSON SchemaType where
@@ -73,41 +75,44 @@ instance FromJSON SchemaType where
     _         -> fail $ "not a valid type: " ++ unpack t
   parseJSON _ = fail "not a string"
 
+type Map a = H.HashMap Text a
+
 data Schema version ref = Schema
-  { schemaType :: [Choice2 SchemaType (Schema version ref)]
-  , schemaProperties :: Map (Schema version ref)
-  , schemaPatternProperties :: [(Pattern, Schema version ref)]
-  , schemaAdditionalProperties :: Choice2 Bool (Schema version ref)
-  , schemaItems :: Maybe (Choice2 (Schema version ref) [Schema version ref])
-  , schemaAdditionalItems :: Choice2 Bool (Schema version ref)
-  , schemaRequired :: Bool
-  , schemaDependencies :: Map (Choice2 [Text] (Schema version ref))
-  , schemaMinimum :: Maybe Number
-  , schemaMaximum :: Maybe Number
-  , schemaExclusiveMinimum :: Bool
-  , schemaExclusiveMaximum :: Bool
-  , schemaMinItems :: Int
-  , schemaMaxItems :: Maybe Int
-  , schemaUniqueItems :: Bool
-  , schemaPattern :: Maybe Pattern
-  , schemaMinLength :: Int
-  , schemaMaxLength :: Maybe Int
-  , schemaEnum :: Maybe [Value]
-  , schemaEnumDescriptions :: Maybe [Text]
-  , schemaDefault :: Maybe Value
-  , schemaTitle :: Maybe Text
-  , schemaDescription :: Maybe Text
-  , schemaFormat :: Maybe Text
-  , schemaDivisibleBy :: Maybe Number
-  , schemaDisallow :: [Choice2 SchemaType (Schema version ref)]
-  , schemaExtends :: [Schema version ref]
-  , schemaId :: Maybe Text
-  , schemaDRef :: Maybe ref -- ^ $ref
-  , schemaDSchema :: Maybe Text -- ^ $schema
+  { schemaType                 :: [Choice2 SchemaType (Schema version ref)]                 -- ^ a list of allowed schema types
+  , schemaProperties           :: Map (Schema version ref)                                  -- ^ subschemas for properties
+  , schemaPatternProperties    :: [(Pattern, Schema version ref)]                           -- ^ all properties that match one of the regexes must validate against the associated schema
+  , schemaAdditionalProperties :: Choice2 Bool (Schema version ref)                         -- ^ whether additional properties are allowed when the instance is an object, and if so, a schema that they have to validate against
+  , schemaItems                :: Maybe (Choice2 (Schema version ref) [Schema version ref]) -- ^ either a schema for all array items or a different schema for each position in the array
+  , schemaAdditionalItems      :: Choice2 Bool (Schema version ref)                         -- ^ whether additional items are allowed
+  , schemaRequired             :: Bool                                                      -- ^ when this schema is used in a property of another schema, this means that the property must have a value and not be undefined
+  , schemaDependencies         :: Map (Choice2 [Text] (Schema version ref))                 -- ^ map of dependencies (property a requires properties b and c, property a requires the instance to validate against another schema, etc.)
+  , schemaMinimum              :: Maybe Number                                              -- ^ minimum value when the instance is a number
+  , schemaMaximum              :: Maybe Number                                              -- ^ maximum value when the instance is a number
+  , schemaExclusiveMinimum     :: Bool                                                      -- ^ whether the minimum value is exclusive (only numbers greater than the minimum are allowed)
+  , schemaExclusiveMaximum     :: Bool                                                      -- ^ whether the maximum value is exclusive (only numbers less than the maximum are allowed)
+  , schemaMinItems             :: Int                                                       -- ^ minimum length for arrays
+  , schemaMaxItems             :: Maybe Int                                                 -- ^ maximum length for arrays
+  , schemaUniqueItems          :: Bool                                                      -- ^ whether all array items must be distinct from each other
+  , schemaPattern              :: Maybe Pattern                                             -- ^ regex for validating strings
+  , schemaMinLength            :: Int                                                       -- ^ minimum length for strings
+  , schemaMaxLength            :: Maybe Int                                                 -- ^ maximum length for strings
+  , schemaEnum                 :: Maybe [Value]                                             -- ^ allowed values for this schema
+  , schemaEnumDescriptions     :: Maybe [Text]                                              -- ^ extension by Google: description for the values in schemaEnum
+  , schemaDefault              :: Maybe Value                                               -- ^ default value if this schema is used in a property of another schema and the value is undefined
+  , schemaTitle                :: Maybe Text                                                -- ^ short description of the instance property
+  , schemaDescription          :: Maybe Text                                                -- ^ full description of the purpose of the instance property
+  , schemaFormat               :: Maybe Text                                                -- ^ format of strings, e.g. 'data-time', 'regex' or 'email'
+  , schemaDivisibleBy          :: Maybe Number                                              -- ^ when the instance is a number, it must be divisible by this number with no remainder
+  , schemaDisallow             :: [Choice2 SchemaType (Schema version ref)]                 -- ^ list of disallowed types
+  , schemaExtends              :: [Schema version ref]                                      -- ^ base schema that the current schema inherits from
+  , schemaId                   :: Maybe Text                                                -- ^ identifier of the current schema
+  , schemaDRef                 :: Maybe ref                                                 -- ^ $ref: reference to another schema
+  , schemaDSchema              :: Maybe Text                                                -- ^ $schema: URI of a schema that defines the format of the current schema
   } deriving (Eq, Show)
 
 data V3
 
+-- | Set of potentially mutually recursive schemas
 type Graph f ref = M.Map ref (f ref)
 
 instance Functor (Schema version) where
@@ -146,6 +151,58 @@ instance Foldable (Schema version) where
       foldChoice2of2 g (Choice2of2 c) = g c
       foldChoice2of2 _ _ = id
 
+instance FromJSON ref => FromJSON (Schema V3 ref) where
+  parseJSON (Object o) = Schema
+    <$> (parseSingleOrArray =<< parseFieldDefault "type" "any")
+    <*> parseFieldDefault "properties" emptyObject
+    <*> (parseFieldDefault "patternProperties" emptyObject >>= mapM (\(k, v) -> fmap (,v) (mkPattern k)) . H.toList)
+    <*> (parseField "additionalProperties" .!= Choice1of2 True)
+    <*> parseField "items"
+    <*> (parseField "additionalItems" .!= Choice1of2 True)
+    <*> parseFieldDefault "required" (Bool False)
+    <*> (traverse parseDependency =<< parseFieldDefault "dependencies" emptyObject)
+    <*> parseField "minimum"
+    <*> parseField "maximum"
+    <*> parseFieldDefault "exclusiveMinimum" (Bool False)
+    <*> parseFieldDefault "exclusiveMaximum" (Bool False)
+    <*> parseFieldDefault "minItems" (Number $ fromInteger 0)
+    <*> parseField "maxItems"
+    <*> parseFieldDefault "uniqueItems" (Bool False)
+    <*> parseField "pattern"
+    <*> parseFieldDefault "minLength" (Number $ fromInteger 0)
+    <*> parseField "maxLength"
+    <*> parseField "enum"
+    <*> parseField "enumDescriptions"
+    <*> parseField "default"
+    <*> parseField "title"
+    <*> parseField "description"
+    <*> parseField "format"
+    <*> parseField "divisibleBy"
+    <*> (parseSingleOrArray =<< parseFieldDefault "disallow" emptyArray)
+    <*> ((maybe (return Nothing) (fmap Just . parseSingleOrArray) =<< parseField "extends") .!= [])
+    <*> parseField "id"
+    <*> parseField "$ref"
+    <*> parseField "$schema"
+    where
+      parseField :: (FromJSON a) => Text -> Parser (Maybe a)
+      parseField name = o .:? name
+
+      parseFieldDefault :: (FromJSON a) => Text -> Value -> Parser a
+      parseFieldDefault name value = parseJSON =<< parseField name .!= value
+
+      singleOrArray :: (Value -> Parser a) -> Value -> Parser [a]
+      singleOrArray p (Array a) = mapM p (V.toList a)
+      singleOrArray p v = (:[]) <$> p v
+
+      parseSingleOrArray :: (FromJSON a) => Value -> Parser [a]
+      parseSingleOrArray = singleOrArray parseJSON
+
+      parseDependency :: FromJSON ref => Value -> Parser (Choice2 [Text] (Schema V3 ref))
+      parseDependency (String s) = return $ Choice1of2 [s]
+      parseDependency val = parseJSON val
+  parseJSON _ = fail "a schema must be a JSON object"
+
+-- | The empty schema accepts any JSON value.
 empty :: Schema version ref
 empty = Schema
   { schemaType = [Choice1of2 AnyType]
@@ -179,52 +236,3 @@ empty = Schema
   , schemaDRef = Nothing
   , schemaDSchema = Nothing
   }
-
-instance (FromJSON ref) => FromJSON (Schema V3 ref) where
-  parseJSON (Object o) =
-    Schema <$> (parseSingleOrArray =<< parseFieldDefault "type" "any")
-           <*> parseFieldDefault "properties" emptyObject
-           <*> (parseFieldDefault "patternProperties" emptyObject >>= mapM (\(k, v) -> fmap (,v) (mkPattern k)) . H.toList)
-           <*> (parseField "additionalProperties" .!= Choice1of2 True)
-           <*> parseField "items"
-           <*> (parseField "additionalItems" .!= Choice1of2 True)
-           <*> parseFieldDefault "required" (Bool False)
-           <*> (traverse parseDependency =<< parseFieldDefault "dependencies" emptyObject)
-           <*> parseField "minimum"
-           <*> parseField "maximum"
-           <*> parseFieldDefault "exclusiveMinimum" (Bool False)
-           <*> parseFieldDefault "exclusiveMaximum" (Bool False)
-           <*> parseFieldDefault "minItems" (Number $ fromInteger 0)
-           <*> parseField "maxItems"
-           <*> parseFieldDefault "uniqueItems" (Bool False)
-           <*> parseField "pattern"
-           <*> parseFieldDefault "minLength" (Number $ fromInteger 0)
-           <*> parseField "maxLength"
-           <*> parseField "enum"
-           <*> parseField "enumDescriptions"
-           <*> parseField "default"
-           <*> parseField "title"
-           <*> parseField "description"
-           <*> parseField "format"
-           <*> parseField "divisibleBy"
-           <*> (parseSingleOrArray =<< parseFieldDefault "disallow" emptyArray)
-           <*> ((maybe (return Nothing) (fmap Just . parseSingleOrArray) =<< parseField "extends") .!= [])
-           <*> parseField "id"
-           <*> parseField "$ref"
-           <*> parseField "$schema"
-      where
-        parseField :: (FromJSON a) => Text -> Parser (Maybe a)
-        parseField name = o .:? name
-        parseFieldDefault :: (FromJSON a) => Text -> Value -> Parser a
-        parseFieldDefault name value = parseJSON =<< parseField name .!= value
-
-        parseDependency (String s) = return $ Choice1of2 [s]
-        parseDependency val = parseJSON val
-  parseJSON _ = fail "a schema must be a JSON object"
-
-singleOrArray :: (Value -> Parser a) -> Value -> Parser [a]
-singleOrArray p (Array a) = mapM p (V.toList a)
-singleOrArray p v = (:[]) <$> p v
-
-parseSingleOrArray :: (FromJSON a) => Value -> Parser [a]
-parseSingleOrArray = singleOrArray parseJSON
