@@ -22,8 +22,8 @@ source-repository head
 library
   ghc-options:         -Wall
   hs-source-dirs:      src
-  exposed-modules:     Data.Aeson.TH.Lift, Data.Aeson.Schema, Data.Aeson.Schema.Validator, Data.Aeson.Schema.CodeGen, Data.Aeson.Schema.Choice, Data.Aeson.Schema.Helpers
-  other-modules:       Data.Aeson.Schema.Choice.TH
+  exposed-modules:     Data.Aeson.Schema, Data.Aeson.Schema.Validator, Data.Aeson.Schema.CodeGen, Data.Aeson.Schema.Choice, Data.Aeson.Schema.Helpers
+  other-modules:       Data.Aeson.Schema.Choice.TH, Data.Aeson.TH.Lift
   extensions:          OverloadedStrings
   build-depends:       base == 4.5.*,
                        aeson >= 0.6.0.2,
@@ -58,7 +58,7 @@ test-suite tests
   hs-source-dirs:      test
   type:                exitcode-stdio-1.0
   main-is:             TestSuite.hs
-  extensions:          OverloadedStrings, TemplateHaskell, QuasiQuotes
+  extensions:          OverloadedStrings
   build-depends:       base == 4.5.*,
                        aeson,
                        text,

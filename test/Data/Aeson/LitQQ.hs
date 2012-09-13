@@ -13,7 +13,7 @@ import Data.Attoparsec.Lazy (parse, Result (..))
 import Data.Attoparsec.Char8 (skipSpace)
 import Control.Applicative ((<*), (*>))
 
-import Data.Aeson.TH.Lift ()
+import Data.Aeson.Schema.CodeGen () -- Lift instances
 
 aesonLitQQ :: QuasiQuoter
 aesonLitQQ = QuasiQuoter

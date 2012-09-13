@@ -1,21 +1,24 @@
+{-# LANGUAGE QuasiQuotes #-}
+
 module Data.Aeson.Schema.Examples
   ( examples
   ) where
 
 import Data.Aeson (Value, Result (..), fromJSON)
 import Data.Aeson.LitQQ (aesonLitQQ)
-import Data.Aeson.Schema
 import Data.Text (Text)
 import qualified Data.Map as M
 
-parseSchema :: Value -> IO (Schema V3 Text)
-parseSchema v = case fromJSON v :: Result (Schema V3 Text) of
+import Data.Aeson.Schema
+
+parseSchema :: Value -> IO (Schema Text)
+parseSchema v = case fromJSON v :: Result (Schema Text) of
   Error e -> fail $ "invalid schema: " ++ e
   Success schema -> return schema
 
 examples :: (String -> IO () -> a)
-         -> (Graph (Schema V3) Text -> Schema V3 Text -> Value -> IO ())
-         -> (Graph (Schema V3) Text -> Schema V3 Text -> Value -> IO ())
+         -> (Graph Schema Text -> Schema Text -> Value -> IO ())
+         -> (Graph Schema Text -> Schema Text -> Value -> IO ())
          -> [a]
 examples testCase assertValid' assertInvalid' =
   [ testCase "type: \"number\"" $ do

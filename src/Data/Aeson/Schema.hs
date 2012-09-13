@@ -1,4 +1,3 @@
-{-# LANGUAGE EmptyDataDecls    #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE TupleSections     #-}
 
@@ -8,7 +7,6 @@ module Data.Aeson.Schema
   , Map
   , SchemaType (..)
   , Schema (..)
-  , V3
   , Graph
   , empty
   ) where
@@ -77,45 +75,43 @@ instance FromJSON SchemaType where
 
 type Map a = H.HashMap Text a
 
-data Schema version ref = Schema
-  { schemaType                 :: [Choice2 SchemaType (Schema version ref)]                 -- ^ a list of allowed schema types
-  , schemaProperties           :: Map (Schema version ref)                                  -- ^ subschemas for properties
-  , schemaPatternProperties    :: [(Pattern, Schema version ref)]                           -- ^ all properties that match one of the regexes must validate against the associated schema
-  , schemaAdditionalProperties :: Choice2 Bool (Schema version ref)                         -- ^ whether additional properties are allowed when the instance is an object, and if so, a schema that they have to validate against
-  , schemaItems                :: Maybe (Choice2 (Schema version ref) [Schema version ref]) -- ^ either a schema for all array items or a different schema for each position in the array
-  , schemaAdditionalItems      :: Choice2 Bool (Schema version ref)                         -- ^ whether additional items are allowed
-  , schemaRequired             :: Bool                                                      -- ^ when this schema is used in a property of another schema, this means that the property must have a value and not be undefined
-  , schemaDependencies         :: Map (Choice2 [Text] (Schema version ref))                 -- ^ map of dependencies (property a requires properties b and c, property a requires the instance to validate against another schema, etc.)
-  , schemaMinimum              :: Maybe Number                                              -- ^ minimum value when the instance is a number
-  , schemaMaximum              :: Maybe Number                                              -- ^ maximum value when the instance is a number
-  , schemaExclusiveMinimum     :: Bool                                                      -- ^ whether the minimum value is exclusive (only numbers greater than the minimum are allowed)
-  , schemaExclusiveMaximum     :: Bool                                                      -- ^ whether the maximum value is exclusive (only numbers less than the maximum are allowed)
-  , schemaMinItems             :: Int                                                       -- ^ minimum length for arrays
-  , schemaMaxItems             :: Maybe Int                                                 -- ^ maximum length for arrays
-  , schemaUniqueItems          :: Bool                                                      -- ^ whether all array items must be distinct from each other
-  , schemaPattern              :: Maybe Pattern                                             -- ^ regex for validating strings
-  , schemaMinLength            :: Int                                                       -- ^ minimum length for strings
-  , schemaMaxLength            :: Maybe Int                                                 -- ^ maximum length for strings
-  , schemaEnum                 :: Maybe [Value]                                             -- ^ allowed values for this schema
-  , schemaEnumDescriptions     :: Maybe [Text]                                              -- ^ extension by Google: description for the values in schemaEnum
-  , schemaDefault              :: Maybe Value                                               -- ^ default value if this schema is used in a property of another schema and the value is undefined
-  , schemaTitle                :: Maybe Text                                                -- ^ short description of the instance property
-  , schemaDescription          :: Maybe Text                                                -- ^ full description of the purpose of the instance property
-  , schemaFormat               :: Maybe Text                                                -- ^ format of strings, e.g. 'data-time', 'regex' or 'email'
-  , schemaDivisibleBy          :: Maybe Number                                              -- ^ when the instance is a number, it must be divisible by this number with no remainder
-  , schemaDisallow             :: [Choice2 SchemaType (Schema version ref)]                 -- ^ list of disallowed types
-  , schemaExtends              :: [Schema version ref]                                      -- ^ base schema that the current schema inherits from
-  , schemaId                   :: Maybe Text                                                -- ^ identifier of the current schema
-  , schemaDRef                 :: Maybe ref                                                 -- ^ $ref: reference to another schema
-  , schemaDSchema              :: Maybe Text                                                -- ^ $schema: URI of a schema that defines the format of the current schema
+data Schema ref = Schema
+  { schemaType                 :: [Choice2 SchemaType (Schema ref)]         -- ^ a list of allowed schema types
+  , schemaProperties           :: Map (Schema ref)                          -- ^ subschemas for properties
+  , schemaPatternProperties    :: [(Pattern, Schema ref)]                   -- ^ all properties that match one of the regexes must validate against the associated schema
+  , schemaAdditionalProperties :: Choice2 Bool (Schema ref)                 -- ^ whether additional properties are allowed when the instance is an object, and if so, a schema that they have to validate against
+  , schemaItems                :: Maybe (Choice2 (Schema ref) [Schema ref]) -- ^ either a schema for all array items or a different schema for each position in the array
+  , schemaAdditionalItems      :: Choice2 Bool (Schema ref)                 -- ^ whether additional items are allowed
+  , schemaRequired             :: Bool                                      -- ^ when this schema is used in a property of another schema, this means that the property must have a value and not be undefined
+  , schemaDependencies         :: Map (Choice2 [Text] (Schema ref))         -- ^ map of dependencies (property a requires properties b and c, property a requires the instance to validate against another schema, etc.)
+  , schemaMinimum              :: Maybe Number                              -- ^ minimum value when the instance is a number
+  , schemaMaximum              :: Maybe Number                              -- ^ maximum value when the instance is a number
+  , schemaExclusiveMinimum     :: Bool                                      -- ^ whether the minimum value is exclusive (only numbers greater than the minimum are allowed)
+  , schemaExclusiveMaximum     :: Bool                                      -- ^ whether the maximum value is exclusive (only numbers less than the maximum are allowed)
+  , schemaMinItems             :: Int                                       -- ^ minimum length for arrays
+  , schemaMaxItems             :: Maybe Int                                 -- ^ maximum length for arrays
+  , schemaUniqueItems          :: Bool                                      -- ^ whether all array items must be distinct from each other
+  , schemaPattern              :: Maybe Pattern                             -- ^ regex for validating strings
+  , schemaMinLength            :: Int                                       -- ^ minimum length for strings
+  , schemaMaxLength            :: Maybe Int                                 -- ^ maximum length for strings
+  , schemaEnum                 :: Maybe [Value]                             -- ^ allowed values for this schema
+  , schemaEnumDescriptions     :: Maybe [Text]                              -- ^ extension by Google: description for the values in schemaEnum
+  , schemaDefault              :: Maybe Value                               -- ^ default value if this schema is used in a property of another schema and the value is undefined
+  , schemaTitle                :: Maybe Text                                -- ^ short description of the instance property
+  , schemaDescription          :: Maybe Text                                -- ^ full description of the purpose of the instance property
+  , schemaFormat               :: Maybe Text                                -- ^ format of strings, e.g. 'data-time', 'regex' or 'email'
+  , schemaDivisibleBy          :: Maybe Number                              -- ^ when the instance is a number, it must be divisible by this number with no remainder
+  , schemaDisallow             :: [Choice2 SchemaType (Schema ref)]         -- ^ list of disallowed types
+  , schemaExtends              :: [Schema ref]                              -- ^ base schema that the current schema inherits from
+  , schemaId                   :: Maybe Text                                -- ^ identifier of the current schema
+  , schemaDRef                 :: Maybe ref                                 -- ^ $ref: reference to another schema
+  , schemaDSchema              :: Maybe Text                                -- ^ $schema: URI of a schema that defines the format of the current schema
   } deriving (Eq, Show)
-
-data V3
 
 -- | Set of potentially mutually recursive schemas
 type Graph f ref = M.Map ref (f ref)
 
-instance Functor (Schema version) where
+instance Functor Schema where
   fmap f s = s
     { schemaType = mapChoice2 id (fmap f) <$> schemaType s
     , schemaProperties = fmap f <$> schemaProperties s
@@ -129,7 +125,7 @@ instance Functor (Schema version) where
     , schemaDRef = f <$> schemaDRef s
     }
 
-instance Foldable (Schema version) where
+instance Foldable Schema where
   foldr f start s = ffoldr (ffoldr f) (choice2of2s $ schemaType s)
                   . ffoldr (ffoldr f) (schemaProperties s)
                   . ffoldr (ffoldr f) (map snd $ schemaPatternProperties s)
@@ -151,7 +147,7 @@ instance Foldable (Schema version) where
       foldChoice2of2 g (Choice2of2 c) = g c
       foldChoice2of2 _ _ = id
 
-instance FromJSON ref => FromJSON (Schema V3 ref) where
+instance FromJSON ref => FromJSON (Schema ref) where
   parseJSON (Object o) = Schema
     <$> (parseSingleOrArray =<< parseFieldDefault "type" "any")
     <*> parseFieldDefault "properties" emptyObject
@@ -197,13 +193,13 @@ instance FromJSON ref => FromJSON (Schema V3 ref) where
       parseSingleOrArray :: (FromJSON a) => Value -> Parser [a]
       parseSingleOrArray = singleOrArray parseJSON
 
-      parseDependency :: FromJSON ref => Value -> Parser (Choice2 [Text] (Schema V3 ref))
+      parseDependency :: FromJSON ref => Value -> Parser (Choice2 [Text] (Schema ref))
       parseDependency (String s) = return $ Choice1of2 [s]
       parseDependency val = parseJSON val
   parseJSON _ = fail "a schema must be a JSON object"
 
 -- | The empty schema accepts any JSON value.
-empty :: Schema version ref
+empty :: Schema ref
 empty = Schema
   { schemaType = [Choice1of2 AnyType]
   , schemaProperties = H.empty

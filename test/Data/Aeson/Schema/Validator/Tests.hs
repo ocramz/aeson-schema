@@ -14,8 +14,8 @@ import Data.Aeson.Schema.Validator
 
 import Data.Aeson.Schema.Examples (examples)
 
-assertValid, assertInvalid :: Graph (Schema V3) Text
-                           -> Schema V3 Text
+assertValid, assertInvalid :: Graph Schema Text
+                           -> Schema Text
                            -> Value
                            -> HU.Assertion
 assertValid graph schema value = case validate graph schema value of

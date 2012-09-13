@@ -79,10 +79,10 @@ instance Arbitrary Value where
 instance Arbitrary SchemaType where
   arbitrary = oneof $ map pure [StringType, NumberType, IntegerType, BooleanType, ObjectType, ArrayType, NullType, AnyType]
 
---generateValidValue :: Schema V3 Text -> Gen Value
+--generateValidValue :: Schema Text -> Gen Value
 --generateValidValue schema = suchThat arbitrary (isNothing . validate schema)
 
-arbitrarySchema :: (Eq a) => Int -> Gen (Schema V3 a)
+arbitrarySchema :: (Eq a) => Int -> Gen (Schema a)
 arbitrarySchema 0 = return empty
 arbitrarySchema depth = do
   typ <- shortListOf1 (choice2of arbitrary subSchema)
@@ -169,7 +169,7 @@ arbitrarySchema depth = do
     tupleOf = liftM2 (,)
     smallMapOf k v = HM.fromList <$> shortListOf (tupleOf k v)
 
-instance (Eq a) => Arbitrary (Schema V3 a) where
+instance (Eq a) => Arbitrary (Schema a) where
   arbitrary = arbitrarySchema 3
 
 data ForkLift = ForkLift (Chan (Hint.Interpreter (), Hint.InterpreterError -> IO ()))
@@ -219,7 +219,7 @@ tests = do
           Right _  -> return ()
     ]
 
-typecheckGenerate :: ForkLift -> Schema V3 Text -> Property
+typecheckGenerate :: ForkLift -> Schema Text -> Property
 typecheckGenerate forkLift schema = morallyDubiousIOProperty $ do
   let graph = M.singleton "A" schema
   (code, _) <- runQ $ generateModule "CustomSchema" graph

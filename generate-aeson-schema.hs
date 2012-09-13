@@ -17,7 +17,7 @@ import qualified Data.Text.IO as TIO
 import qualified Data.Map as M
 
 import Paths_aeson_schema (version)
-import Data.Aeson.Schema (Schema (..), V3)
+import Data.Aeson.Schema (Schema (..))
 
 data GenerateArgs = GenerateArgs
   { modName :: String
@@ -35,7 +35,7 @@ main = do
   args <- cmdArgs generateArgs
   contents <- readFile $ inputSchema args
   value <- iResultM $ parse json contents
-  case fromJSON value :: A.Result (Schema V3 Text) of
+  case fromJSON value :: A.Result (Schema Text) of
     A.Error str -> fail str
     A.Success schema -> do
       let m = M.fromList [(pack "A", schema)]

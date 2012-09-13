@@ -114,7 +114,7 @@ instance (Lift a, Lift b, Lift c) => Lift (Choice3 a b c) where
 instance Lift Pattern where
   lift (Pattern src _) = [| let Right p = mkPattern src in p |]
 
-instance Lift (Schema V3 Text) where
+instance Lift (Schema Text) where
   lift schema = case updates of
     [] -> varE 'empty
     _  -> recUpdE (varE 'empty) updates
@@ -171,10 +171,10 @@ getDecs = catMaybes . map getDec
   where getDec (Declaration dec _) = Just dec
         getDec _ = Nothing
 
-generateTH :: Graph (Schema V3) Text -> Q ([Dec], M.Map Text Name)
+generateTH :: Graph Schema Text -> Q ([Dec], M.Map Text Name)
 generateTH = fmap (first getDecs) . generate
 
-generateModule :: Text -> Graph (Schema V3) Text -> Q (Text, M.Map Text Name)
+generateModule :: Text -> Graph Schema Text -> Q (Text, M.Map Text Name)
 generateModule modName = fmap (first $ renderCode . map rewrite) . generate
   where
     renderCode :: Code -> Text
@@ -191,18 +191,18 @@ generateModule modName = fmap (first $ renderCode . map rewrite) . generate
     renderDeclaration (Declaration dec Nothing)   = pack (pprint dec)
     renderDeclaration (Comment comment)           = T.unlines $ map (\line -> "-- " <> line) $ T.lines comment
 
-generate :: Graph (Schema V3) Text -> Q (Code, M.Map Text Name)
+generate :: Graph Schema Text -> Q (Code, M.Map Text Name)
 generate graph = swap <$> evalRWST (unCodeGenM $ generateTopLevel graph >> return typeMap) typeMap used
   where
     (used, typeMap) = second M.fromList $ mapAccumL nameAccum HS.empty (M.keys graph)
     nameAccum usedNames schemaName = second (schemaName,) $ swap $ codeGenNewName (firstUpper $ unpack schemaName) usedNames
 
-generateTopLevel :: Graph (Schema V3) Text -> CodeGenM ()
+generateTopLevel :: Graph Schema Text -> CodeGenM ()
 generateTopLevel graph = do
   typeMap <- ask
   graphN <- qNewName "graph"
   when (nameBase graphN /= "graph") $ fail "name graph is already taken"
-  graphDecType <- runQ $ sigD graphN [t| Graph (Schema V3) Text |]
+  graphDecType <- runQ $ sigD graphN [t| Graph Schema Text |]
   graphDec <- runQ $ valD (varP graphN) (normalB $ lift graph) []
   tell [Declaration graphDecType Nothing, Declaration graphDec Nothing]
   forM_ (M.toList graph) $ \(name, schema) -> do
@@ -216,7 +216,7 @@ generateTopLevel graph = do
         ]
       tell [Declaration newtypeDec Nothing, Declaration fromJSONInst Nothing]
 
-generateSchema :: Maybe Name -> Text -> Schema V3 Text -> CodeGenM ((TypeQ, ExpQ), Bool)
+generateSchema :: Maybe Name -> Text -> Schema Text -> CodeGenM ((TypeQ, ExpQ), Bool)
 generateSchema decName name schema = case schemaDRef schema of
   Just ref -> ask >>= \typesMap -> case M.lookup ref typesMap of
     Nothing -> fail "couldn't find referenced schema"
@@ -295,7 +295,7 @@ lambdaPattern pat body err = lamE [varP val] $ caseE (varE val)
   ]
   where val = mkName "val"
 
-generateString :: Schema V3 Text -> CodeGenM (TypeQ, ExpQ)
+generateString :: Schema Text -> CodeGenM (TypeQ, ExpQ)
 generateString schema = return (conT ''Text, code)
   where
     str = mkName "str"
@@ -316,7 +316,7 @@ generateString schema = return (conT ''Text, code)
                          (doE $ checkers ++ [noBindS [| return $(varE str) |]])
                          [| fail "not a string" |]
 
-generateNumber :: Schema V3 Text -> CodeGenM (TypeQ, ExpQ)
+generateNumber :: Schema Text -> CodeGenM (TypeQ, ExpQ)
 generateNumber schema = return (conT ''Number, code)
   where
     num = mkName "num"
@@ -324,7 +324,7 @@ generateNumber schema = return (conT ''Number, code)
                          (doE $ numberCheckers num schema ++ [noBindS [| return $(varE num) |]])
                          [| fail "not a number" |]
 
-generateInteger :: Schema V3 Text -> CodeGenM (TypeQ, ExpQ)
+generateInteger :: Schema Text -> CodeGenM (TypeQ, ExpQ)
 generateInteger schema = return (conT ''Integer, code)
   where
     num = mkName "num"
@@ -332,7 +332,7 @@ generateInteger schema = return (conT ''Integer, code)
                          (doE $ numberCheckers num schema ++ [noBindS [| return $(varE $ mkName "i") |]])
                          [| fail "not an integer" |]
 
-numberCheckers :: Name -> Schema V3 Text -> [StmtQ]
+numberCheckers :: Name -> Schema Text -> [StmtQ]
 numberCheckers num schema = catMaybes
   [ checkMinimum (schemaExclusiveMinimum schema) <$> schemaMinimum schema
   , checkMaximum (schemaExclusiveMaximum schema) <$> schemaMaximum schema
@@ -372,7 +372,7 @@ firstUpper (c:cs) = toUpper c : cs
 firstLower "" = ""
 firstLower (c:cs) = toLower c : cs
 
-generateObject :: Maybe Name -> Text -> Schema V3 Text -> CodeGenM (TypeQ, ExpQ)
+generateObject :: Maybe Name -> Text -> Schema Text -> CodeGenM (TypeQ, ExpQ)
 generateObject decName name schema = do
   let propertiesList = HM.toList $ schemaProperties schema
   (propertyNames, propertyTypes, propertyParsers, defaultParsers) <- fmap unzip4 $ forM propertiesList $ \(fieldName, propertySchema) -> do
@@ -436,7 +436,7 @@ generateObject decName name schema = do
         else Just (checkPatternAndAdditionalProperties (schemaPatternProperties schema) (schemaAdditionalProperties schema))
       ]
 
-generateArray :: Text -> Schema V3 Text -> CodeGenM (TypeQ, ExpQ)
+generateArray :: Text -> Schema Text -> CodeGenM (TypeQ, ExpQ)
 generateArray name schema = case schemaItems schema of
   Nothing -> monomorphicArray (conT ''Value) (varE 'parseJSON)
   Just (Choice1of2 itemsSchema) -> do
@@ -490,7 +490,7 @@ generateArray name schema = case schemaItems schema of
       , if schemaUniqueItems schema then Just checkUnique else Nothing
       ]
 
-generateAny :: Schema V3 Text -> CodeGenM (TypeQ, ExpQ)
+generateAny :: Schema Text -> CodeGenM (TypeQ, ExpQ)
 generateAny schema = return (conT ''Value, code)
   where
     val = mkName "val"

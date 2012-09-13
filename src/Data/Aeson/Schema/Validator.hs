@@ -45,7 +45,7 @@ instance Validator Maybe where
   isValid = isNothing
   allValid = msum
 
-validate :: Ord ref => Graph (Schema V3) ref -> Schema V3 ref -> Value -> SchemaValidator
+validate :: Ord ref => Graph Schema ref -> Schema ref -> Value -> SchemaValidator
 validate graph schema val = case schemaDRef schema of
   Just ref -> case M.lookup ref graph of
     Nothing -> validationError "referenced schema is not in map"
@@ -57,7 +57,6 @@ validate graph schema val = case schemaDRef schema of
     , allValid $ map (flip (validate graph) val) (schemaExtends schema)
     ]
   where
-    --validateType :: Choice2 SchemaType (Schema V3 ref) -> SchemaValidator
     validateType (Choice1of2 t) = case (t, val) of
       (StringType, String str) -> validateString schema str
       (NumberType, Number num) -> validateNumber schema num
@@ -95,7 +94,6 @@ validate graph schema val = case schemaDRef schema of
     isType _ AnyType = True
     isType _ _ = False
 
-    --validateTypeDisallowed :: Choice2 SchemaType (Schema V3 ref) -> SchemaValidator
     validateTypeDisallowed (Choice1of2 t) = if isType val t
         then validationError $ "values of type " ++ show t ++ " are not allowed here"
         else valid
@@ -109,7 +107,7 @@ maybeCheck :: (a -> SchemaValidator) -> Maybe a -> SchemaValidator
 maybeCheck p (Just a) = p a
 maybeCheck _ _ = valid
 
-validateString :: Schema V3 ref -> Text -> SchemaValidator
+validateString :: Schema ref -> Text -> SchemaValidator
 validateString schema str = allValid
   [ checkMinLength $ schemaMinLength schema
   , maybeCheck checkMaxLength (schemaMaxLength schema)
@@ -122,7 +120,7 @@ validateString schema str = allValid
     checkPattern (Pattern source compiled) = assert (match compiled $ unpack str) $ "string must match pattern " ++ show source
     checkFormat format = maybe valid validationError $ validateFormat format str
 
-validateNumber :: Schema V3 ref -> Number -> SchemaValidator
+validateNumber :: Schema ref -> Number -> SchemaValidator
 validateNumber schema num = allValid
   [ maybeCheck (checkMinimum $ schemaExclusiveMinimum schema) $ schemaMinimum schema
   , maybeCheck (checkMaximum $ schemaExclusiveMaximum schema) $ schemaMaximum schema
@@ -137,7 +135,7 @@ validateNumber schema num = allValid
       else assert (num <= m) $ "number must be less than or equal " ++ show m
     checkDivisibleBy devisor = assert (num `isDivisibleBy` devisor) $ "number must be devisible by " ++ show devisor
 
-validateObject :: Ord ref => Graph (Schema V3) ref -> Schema V3 ref -> A.Object -> SchemaValidator
+validateObject :: Ord ref => Graph Schema ref -> Schema ref -> A.Object -> SchemaValidator
 validateObject graph schema obj = allValid
   [ allValid $ map (uncurry checkKeyValue) (H.toList obj)
   , allValid $ map checkRequiredProperty requiredProperties
@@ -167,7 +165,7 @@ validateObject graph schema obj = allValid
       Nothing -> validationError $ "required property " ++ unpack key ++ " is missing"
       Just _ -> valid
 
-validateArray :: Ord ref => Graph (Schema V3) ref -> Schema V3 ref -> A.Array -> SchemaValidator
+validateArray :: Ord ref => Graph Schema ref -> Schema ref -> A.Array -> SchemaValidator
 validateArray graph schema arr = allValid
   [ checkMinItems $ schemaMinItems schema
   , maybeCheck checkMaxItems $ schemaMaxItems schema
