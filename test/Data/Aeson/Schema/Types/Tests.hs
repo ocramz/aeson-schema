@@ -1,4 +1,4 @@
-module Data.Aeson.Schema.Tests
+module Data.Aeson.Schema.Types.Tests
   ( tests
   ) where
 

@@ -252,7 +252,7 @@ testExamples forkLift = examples testCase assertValid assertInvalid
   where
     assertValid = assertValidates True
     assertInvalid = assertValidates False
-    assertValidates isValid graph schema value = do
+    assertValidates shouldBeValid graph schema value = do
       let graph' = if M.null graph then M.singleton "a" schema else graph
       (code, typeMap) <- runQ $ generateModule "TestSchema" graph'
       valueExpr <- replaceHiddenModules <$> runQ (THS.lift value)
@@ -274,7 +274,7 @@ testExamples forkLift = examples testCase assertValid assertInvalid
       let printInfo = TIO.putStrLn code >> putStrLn validatesExpr
       case result of
         Left err -> printInfo >> (HU.assertFailure $ show err)
-        Right validates -> case (isValid, validates) of
+        Right maybeError -> case (shouldBeValid, maybeError) of
           (True, Nothing) -> return ()
           (False, Just _) -> return ()
           (True, Just e)  -> do

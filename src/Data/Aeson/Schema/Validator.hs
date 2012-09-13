@@ -18,7 +18,7 @@ import qualified Data.Vector               as V
 import           Prelude                   hiding (foldr, length)
 import           Text.Regex.PCRE           (match)
 
-import           Data.Aeson.Schema
+import           Data.Aeson.Schema.Types
 import           Data.Aeson.Schema.Choice
 import           Data.Aeson.Schema.Helpers
 

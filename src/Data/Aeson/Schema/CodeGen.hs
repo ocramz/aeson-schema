@@ -42,7 +42,7 @@ import           Language.Haskell.TH.Syntax
 import qualified Text.Regex.PCRE             as PCRE
 import           Text.Regex.PCRE.String      (Regex)
 
-import           Data.Aeson.Schema
+import           Data.Aeson.Schema.Types
 import           Data.Aeson.Schema.Choice
 import           Data.Aeson.Schema.Helpers
 import           Data.Aeson.Schema.Validator
