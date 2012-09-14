@@ -8,7 +8,7 @@ import           Test.Framework
 import           Test.Framework.Providers.HUnit
 import           Test.Framework.Providers.QuickCheck2
 import qualified Test.HUnit                           as HU
-import           Test.QuickCheck                      (Gen, arbitrary)
+import           Test.QuickCheck                      (Gen, arbitrary, vectorOf)
 
 import           Data.Aeson
 import           Data.Char                            (toUpper)
@@ -37,7 +37,7 @@ choiceShow7 c = show c
 tests :: [Test]
 tests =
   [ testCase "parseJSON" $ do
-      Success (Choice1of3 3 :: Choice3 Int String [Bool]) HU.@=? fromJSON (Number $ fromInteger 3)
+      Success (Choice1of3 3 :: Choice3 Int String [Bool]) HU.@=? fromJSON (Number 3)
       Success (Choice2of3 "lorem" :: Choice3 Int String [Bool]) HU.@=? fromJSON (String "lorem")
       Success (Choice3of3 [True,False,True] :: Choice3 Int String [Bool]) HU.@=? fromJSON (Array . fromList . map Bool $ [True,False,True])
   , testCase "toJSON" $ do
@@ -45,7 +45,7 @@ tests =
       Array (fromList []) HU.@=? toJSON (Choice2of3 () :: Choice3 (Either Char Bool) () (Maybe String))
       Null HU.@=? toJSON (Choice3of3 Nothing :: Choice3 (Either Char Bool) () (Maybe String))
   , testProperty "arbitrary" $ do
-      xs <- sequence $ replicate 100 (arbitrary :: Gen (Choice3 () () ()))
+      xs <- vectorOf 100 (arbitrary :: Gen (Choice3 () () ()))
       return $ length (nub xs) == 3
   , testCase "choice3" $ do
       let rnd = round :: Double -> Int

@@ -4,8 +4,7 @@ module Data.Aeson.Schema.Choice.TH
   ( generateChoice
   ) where
 
-import           Control.Applicative ((<$>))
-import           Control.Applicative (Alternative (..))
+import           Control.Applicative (Alternative (..), (<$>))
 import           Control.Monad       (forM)
 import           Data.Aeson          (FromJSON (..), ToJSON (..))
 import           Language.Haskell.TH
@@ -17,7 +16,7 @@ generateChoice n = do
   tyName <- newName $ "Choice" ++ show n
   let tyParamNames = map (mkName . singleton) $ take n ['a'..]
   let tyParams = map varT tyParamNames
-  conNames <- mapM newName $ map (\i -> "Choice" ++ show i ++ "of" ++ show n) [1..n]
+  conNames <- mapM (newName . \i -> "Choice" ++ show i ++ "of" ++ show n) [1..n]
   let cons = zipWith normalC conNames $ map ((:[]) . strictType notStrict) tyParams
   dataDec <- dataD (cxt []) tyName (map PlainTV tyParamNames) cons [''Eq, ''Ord, ''Show, ''Read]
   let tyCon = appConT tyName tyParams
@@ -71,7 +70,7 @@ generateChoice n = do
   choiceIofNFuns <- fmap concat $ forM (zip [1..n] conNames) $ \(i, con) -> do
     let choiceIofN = mkName $ "choice" ++ show i ++ "of" ++ show n ++ "s"
     typeDec <- sigD choiceIofN
-                  $ forallT (map PlainTV $ tyParamNames)
+                  $ forallT (map PlainTV tyParamNames)
                             (cxt [])
                           $ appT listT (appConT tyName (map varT tyParamNames)) `arrT` appT listT (tyParams !! (i-1))
     let cs = mkName "cs"
@@ -94,4 +93,4 @@ generateChoice n = do
     functionT :: [TypeQ] -> TypeQ -> TypeQ
     functionT ins out = foldr arrT out ins
     appConT :: Name -> [TypeQ] -> TypeQ
-    appConT con params = foldl appT (conT con) params
+    appConT con = foldl appT (conT con)

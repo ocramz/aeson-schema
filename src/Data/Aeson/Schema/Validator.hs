@@ -45,8 +45,8 @@ validate graph schema val = case schemaDRef schema of
         [t] -> validateType t
         ts  -> if L.any L.null (map validateType ts) then [] else validationError "no type matched"
     , maybeCheck checkEnum $ schemaEnum schema
-    , L.concat $ map validateTypeDisallowed (schemaDisallow schema)
-    , L.concat $ map (flip (validate graph) val) (schemaExtends schema)
+    , concatMap validateTypeDisallowed (schemaDisallow schema)
+    , concatMap (flip (validate graph) val) (schemaExtends schema)
     ]
   where
     validateType (Choice1of2 t) = case (t, val) of
@@ -89,7 +89,7 @@ validate graph schema val = case schemaDRef schema of
     validateTypeDisallowed (Choice1of2 t) = if isType val t
         then validationError $ "values of type " ++ show t ++ " are not allowed here"
         else valid
-    validateTypeDisallowed (Choice2of2 s) = assert (not . L.null $ validate graph s val) $ "value disallowed"
+    validateTypeDisallowed (Choice2of2 s) = assert (not . L.null $ validate graph s val) "value disallowed"
 
 assert :: Bool -> String -> [ValidationError]
 assert True _ = valid
@@ -128,15 +128,14 @@ validateNumber schema num = L.concat
     checkDivisibleBy devisor = assert (num `isDivisibleBy` devisor) $ "number must be devisible by " ++ show devisor
 
 validateObject :: Ord ref => Graph Schema ref -> Schema ref -> A.Object -> [ValidationError]
-validateObject graph schema obj = L.concat
-  [ L.concat $ map (uncurry checkKeyValue) (H.toList obj)
-  , L.concat $ map checkRequiredProperty requiredProperties
-  ]
+validateObject graph schema obj =
+  concatMap (uncurry checkKeyValue) (H.toList obj) ++
+  concatMap checkRequiredProperty requiredProperties
   where
     checkKeyValue k v = L.concat
       [ maybeCheck (flip (validate graph) v) property
-      , L.concat $ map (flip (validate graph) v . snd) matchingPatternsProperties
-      , if (isNothing property && L.null matchingPatternsProperties)
+      , concatMap (flip (validate graph) v . snd) matchingPatternsProperties
+      , if isNothing property && L.null matchingPatternsProperties
         then checkAdditionalProperties (schemaAdditionalProperties schema)
         else valid
       , maybeCheck checkDependencies $ H.lookup k (schemaDependencies schema)
@@ -175,8 +174,8 @@ validateArray graph schema arr = L.concat
       Choice2of2 ss ->
         let additionalItems = drop (L.length ss) list
             checkAdditionalItems ai = case ai of
-              Choice1of2 b -> assert (b || L.null additionalItems) $ "no additional items allowed"
-              Choice2of2 additionalSchema -> L.concat $ map (validate graph additionalSchema) additionalItems
-        in L.concat [ L.concat $ zipWith (validate graph) ss list
-                    , checkAdditionalItems $ schemaAdditionalItems schema
-                    ]
+              Choice1of2 b -> assert (b || L.null additionalItems) "no additional items allowed"
+              Choice2of2 additionalSchema -> concatMap (validate graph additionalSchema) additionalItems
+        in L.concat (zipWith (validate graph) ss list) ++
+           checkAdditionalItems (schemaAdditionalItems schema)
+

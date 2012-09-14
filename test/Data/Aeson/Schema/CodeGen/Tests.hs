@@ -19,7 +19,7 @@ import           Test.QuickCheck.Property             (Result (..), failed,
                                                        morallyDubiousIOProperty,
                                                        succeeded)
 
-import           Control.Applicative                  (pure, (<$>))
+import           Control.Applicative                  (pure, (<$>), (<*>))
 import           Control.Concurrent                   (forkIO)
 import           Control.Concurrent.Chan              (Chan, newChan, readChan,
                                                        writeChan)
@@ -77,21 +77,29 @@ instance Arbitrary Pattern where
       Just p -> return p
       Nothing -> arbitrary
 
+arbitraryValue :: Int -> Gen Value
+arbitraryValue 0 = return Null
+arbitraryValue i = oneof
+  [ Object . HM.fromList <$> shortListOf ((,) <$> arbitrary <*> subValue)
+  , Array  . V.fromList  <$> shortListOf subValue
+  , String <$> arbitrary
+  , Number <$> arbitrary
+  , Bool   <$> arbitrary
+  , pure Null
+  ]
+  where
+    subValue = arbitraryValue (i-1)
+    shortListOf = fmap (take 3) . listOf
+
+
 instance Arbitrary Value where
-  arbitrary = oneof
-    [ Object <$> arbitrary
-    , Array <$> arbitrary
-    , String <$> arbitrary
-    , Number <$> arbitrary
-    , Bool <$> arbitrary
-    , pure Null
-    ]
+  arbitrary = arbitraryValue 3
 
 instance Arbitrary SchemaType where
-  arbitrary = oneof $ map pure [StringType, NumberType, IntegerType, BooleanType, ObjectType, ArrayType, NullType, AnyType]
-
---generateValidValue :: Schema Text -> Gen Value
---generateValidValue schema = suchThat arbitrary (isNothing . validate schema)
+  arbitrary = elements
+    [ StringType, NumberType, IntegerType, BooleanType
+    , ObjectType, ArrayType, NullType, AnyType
+    ]
 
 arbitrarySchema :: (Eq a) => Int -> Gen (Schema a)
 arbitrarySchema 0 = return empty
@@ -147,8 +155,8 @@ arbitrarySchema depth = do
         sMaximum <- case sMinimum of
           Nothing -> arbitrary
           Just mini -> fmap ((+ mini) . abs) <$> arbitrary
-        exclusiveMinimum <- if (isNothing sMinimum) then return False else arbitrary
-        exclusiveMaximum <- if (isNothing sMaximum) then return False else arbitrary
+        exclusiveMinimum <- if isNothing sMinimum then return False else arbitrary
+        exclusiveMaximum <- if isNothing sMaximum then return False else arbitrary
         divisibleBy <- arbitrary
         return $ sch
           { schemaMinimum = sMinimum
@@ -159,13 +167,14 @@ arbitrarySchema depth = do
           }
 
     ]
-  let simple = sch1
-  --enum <- maybeOf $ nub . take 3 <$> listOf1 generateValidValue (fmap undefined simple)
-  enum <- return Nothing
-  dflt <- case enum of
-    Nothing -> return Nothing --maybeOf $ generateValidValue (fmap undefined simple)
-    Just vs -> maybeOf $ oneof (map pure vs)
-  return $ simple { schemaEnum = enum, schemaDefault = dflt }
+  -- the enum and default values are probibly not compatible with the schema
+  -- but that's irrelevant since we're only interested if the generated code
+  -- typechecks
+  enum <- maybeOf (shortListOf arbitrary)
+  dflt <- maybeOf $ case enum of
+    Just vs@(_:_) -> elements vs
+    _             -> arbitrary
+  return $ sch1 { schemaEnum = enum, schemaDefault = dflt }
   where
     modifyIf :: (Monad m) => Bool -> (a -> m a) -> a -> m a
     modifyIf False _ = return
@@ -186,7 +195,7 @@ instance (Eq a) => Arbitrary (Schema a) where
 data ForkLift = ForkLift (Chan (Hint.Interpreter (), Hint.InterpreterError -> IO ()))
 
 -- | uses the Forklift pattern (http://apfelmus.nfshost.com/blog/2012/06/07-forklift.html)
---   to send commands to an interpreter running in a different thread
+-- to send commands to an interpreter running in a different thread
 startInterpreterThread :: IO ForkLift
 startInterpreterThread = do
   cmdChan <- newChan
@@ -284,7 +293,7 @@ testExamples forkLift = examples testCase assertValid assertInvalid
         Hint.interpret validatesExpr (Hint.as :: Maybe String)
       let printInfo = TIO.putStrLn code >> putStrLn validatesExpr
       case result of
-        Left err -> printInfo >> (HU.assertFailure $ show err)
+        Left err -> printInfo >> HU.assertFailure (show err)
         Right maybeError -> case (shouldBeValid, maybeError) of
           (True, Nothing) -> return ()
           (False, Just _) -> return ()

@@ -16,7 +16,7 @@ module Data.Aeson.Schema.CodeGen
 import           Control.Applicative         (Applicative (..), (<$>), (<*>),
                                               (<|>))
 import           Control.Arrow               (first, second)
-import           Control.Monad               (forM_, unless, when)
+import           Control.Monad               (forM_, unless, when, zipWithM)
 import           Control.Monad.RWS.Lazy      (MonadReader (..), MonadState (..),
                                               MonadWriter (..), RWST (..),
                                               evalRWST)
@@ -183,7 +183,7 @@ generateSchema decName name schema = case schemaDRef schema of
     unionType -> do
       let l = pack . show $ length unionType
       let names = map (\i -> name <> "Choice" <> pack (show i) <> "of" <> l) ([1..] :: [Int])
-      subs <- fmap (map fst) $ sequence $ zipWith (choice2 (flip $ generateSimpleType Nothing) (flip $ generateSchema Nothing)) unionType names
+      subs <- fmap (map fst) $ zipWithM (choice2 (flip $ generateSimpleType Nothing) (flip $ generateSchema Nothing)) unionType names
       (,True) <$> generateUnionType subs
   where
     generateSimpleType :: Maybe Name -> Text -> SchemaType -> CodeGenM ((TypeQ, ExpQ), Bool)
@@ -337,7 +337,7 @@ generateObject decName name schema = do
   let propertiesList = HM.toList $ schemaProperties schema
   (propertyNames, propertyTypes, propertyParsers, defaultParsers) <- fmap unzip4 $ forM propertiesList $ \(fieldName, propertySchema) -> do
     let cleanedFieldName = cleanName $ unpack fieldName
-    propertyName <- qNewName $ firstLower $ cleanedFieldName
+    propertyName <- qNewName $ firstLower cleanedFieldName
     ((typ, expr), _) <- generateSchema Nothing (name <> pack (firstUpper cleanedFieldName)) propertySchema
     let lookupProperty = [| HM.lookup $(lift fieldName) $(varE obj) |]
     case schemaDefault propertySchema of
@@ -365,9 +365,8 @@ generateObject decName name schema = do
     checkDependencies deps = noBindS
       [| let items = HM.toList $(varE obj) in forM_ items $ \(pname, _) -> case HM.lookup pname $(lift deps) of
            Nothing -> return ()
-           Just (Choice1of2 props) -> forM_ props $ \prop -> if isNothing (HM.lookup prop $(varE obj))
-             then fail $ unpack pname ++ " requires property " ++ unpack prop
-             else return ()
+           Just (Choice1of2 props) -> forM_ props $ \prop -> when (isNothing (HM.lookup prop $(varE obj))) $
+             fail $ unpack pname ++ " requires property " ++ unpack prop
            Just (Choice2of2 depSchema) -> case validate $(varE $ mkName "graph") depSchema (Object $(varE obj)) of
              [] -> return ()
              es -> fail $ unlines es
@@ -385,7 +384,7 @@ generateObject decName name schema = do
            forM_ matchingPatterns $ \(_, sch) -> case validate $(varE $ mkName "graph") sch value of
              [] -> return ()
              es -> fail $ unlines es
-           let isAdditionalProperty = null matchingPatterns && not (pname `elem` $(lift $ map fst $ HM.toList $ schemaProperties schema))
+           let isAdditionalProperty = null matchingPatterns && pname `notElem` $(lift $ map fst $ HM.toList $ schemaProperties schema)
            when isAdditionalProperty $(checkAdditionalProperties [| value |] additional)
       |]
     additionalPropertiesAllowed (Choice1of2 True) = True
@@ -405,7 +404,7 @@ generateArray name schema = case schemaItems schema of
     monomorphicArray itemType itemCode
   Just (Choice2of2 itemSchemas) -> do
     let names = map (\i -> name <> "Item" <> pack (show i)) ([0..] :: [Int])
-    items <- fmap (map fst) $ sequence $ zipWith (generateSchema Nothing) names itemSchemas
+    items <- fmap (map fst) $ zipWithM (generateSchema Nothing) names itemSchemas
     additionalItems <- case schemaAdditionalItems schema of
       Choice1of2 b -> return $ Choice1of2 b
       Choice2of2 sch -> Choice2of2 . fst <$> generateSchema Nothing (name <> "AdditionalItems") sch

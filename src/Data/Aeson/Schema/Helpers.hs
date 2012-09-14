@@ -58,7 +58,7 @@ validateFormat format str = ($ str) =<< join (lookup format formatValidators)
 -- | Tests whether the first number is divisible by the second with no remainder.
 isDivisibleBy :: Number -> Number -> Bool
 isDivisibleBy (I i) (I j) = i `mod` j == 0
-isDivisibleBy a b = a == fromInteger 0 || denominator (approxRational (a / b) epsilon) `elem` [-1,1]
+isDivisibleBy a b = a == 0 || denominator (approxRational (a / b) epsilon) `elem` [-1,1]
   where epsilon = D $ 10 ** (-10)
 
 -- | Workaround for an issue in Template Haskell: when you quote a name in TH
@@ -74,7 +74,7 @@ replaceHiddenModules = everywhere $ mkT replaceModule
     replacements =
       [ ("Data.HashMap.Base", "Data.HashMap.Lazy")
       , ("Data.Aeson.Types.Class", "Data.Aeson")
-      , ("Data.Aeson.Types.Internal", "Data.Aeson")
+      , ("Data.Aeson.Types.Internal", "Data.Aeson.Types")
       , ("GHC.Integer.Type", "Prelude") -- "Could not find module `GHC.Integer.Type'; it is a hidden module in the package `integer-gmp'"
       , ("GHC.Types", "Prelude")
       , ("GHC.Real", "Prelude")

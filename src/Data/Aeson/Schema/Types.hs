@@ -13,8 +13,7 @@ module Data.Aeson.Schema.Types
   , schemaQQ
   ) where
 
-import           Control.Applicative        ((<*>))
-import           Control.Applicative        ((*>), (<*))
+import           Control.Applicative        ((<*>), (*>), (<*))
 import           Control.Arrow              (second)
 import           Control.Monad              (liftM)
 import           Data.Aeson                 (FromJSON (..), Value (..), (.!=),
@@ -186,11 +185,11 @@ instance FromJSON ref => FromJSON (Schema ref) where
     <*> parseField "maximum"
     <*> parseFieldDefault "exclusiveMinimum" (Bool False)
     <*> parseFieldDefault "exclusiveMaximum" (Bool False)
-    <*> parseFieldDefault "minItems" (Number $ fromInteger 0)
+    <*> parseFieldDefault "minItems" (Number 0)
     <*> parseField "maxItems"
     <*> parseFieldDefault "uniqueItems" (Bool False)
     <*> parseField "pattern"
-    <*> parseFieldDefault "minLength" (Number $ fromInteger 0)
+    <*> parseFieldDefault "minLength" (Number 0)
     <*> parseField "maxLength"
     <*> parseField "enum"
     <*> parseField "enumDescriptions"
