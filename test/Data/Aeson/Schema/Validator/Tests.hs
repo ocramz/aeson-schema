@@ -19,11 +19,11 @@ assertValid, assertInvalid :: Graph Schema Text
                            -> Value
                            -> HU.Assertion
 assertValid graph schema value = case validate graph schema value of
-  Just e -> HU.assertFailure e
-  Nothing -> return ()
+  [] -> return ()
+  es -> HU.assertFailure $ unlines es
 assertInvalid graph schema value = case validate graph schema value of
-  Just _ -> return ()
-  Nothing -> HU.assertFailure "expected a validation error"
+  [] -> HU.assertFailure "expected a validation error"
+  _  -> return ()
 
 tests :: [Test]
 tests = examples testCase assertValid assertInvalid

@@ -1,11 +1,10 @@
 {-# LANGUAGE RankNTypes #-}
 
 module Data.Aeson.Schema.Validator
-  ( Validator (..)
+  ( ValidationError
   , validate
   ) where
 
-import           Control.Monad             (msum)
 import           Data.Aeson                (Value (..))
 import qualified Data.Aeson                as A
 import           Data.Attoparsec.Number    (Number (..))
@@ -23,38 +22,25 @@ import           Data.Aeson.Schema.Choice
 import           Data.Aeson.Schema.Helpers
 
 type ValidationError = String
-type SchemaValidator = forall v. Validator v => v ValidationError
 
-class Validator v where
-  validationError :: a -> v a
-  valid :: v a
-  isValid :: v a -> Bool
-  allValid :: [v a] -> v a
-  anyValid :: a -> [v b] -> v a
-  anyValid err vs = if L.any isValid vs then valid else validationError err
+validationError :: ValidationError -> [ValidationError]
+validationError e = [e]
 
-instance Validator [] where
-  validationError e = [e]
-  valid = []
-  isValid = L.null
-  allValid = L.concat
+valid :: [ValidationError]
+valid = []
 
-instance Validator Maybe where
-  validationError = Just
-  valid = Nothing
-  isValid = isNothing
-  allValid = msum
-
-validate :: Ord ref => Graph Schema ref -> Schema ref -> Value -> SchemaValidator
+validate :: Ord ref => Graph Schema ref -> Schema ref -> Value -> [ValidationError]
 validate graph schema val = case schemaDRef schema of
   Just ref -> case M.lookup ref graph of
     Nothing -> validationError "referenced schema is not in map"
     Just referencedSchema -> validate graph referencedSchema val
-  Nothing -> allValid
-    [ anyValid "no type matched" $ map validateType (schemaType schema)
+  Nothing -> L.concat
+    [ case schemaType schema of
+        [t] -> validateType t
+        ts  -> if L.any L.null (map validateType ts) then [] else validationError "no type matched"
     , maybeCheck checkEnum $ schemaEnum schema
-    , allValid $ map validateTypeDisallowed (schemaDisallow schema)
-    , allValid $ map (flip (validate graph) val) (schemaExtends schema)
+    , L.concat $ map validateTypeDisallowed (schemaDisallow schema)
+    , L.concat $ map (flip (validate graph) val) (schemaExtends schema)
     ]
   where
     validateType (Choice1of2 t) = case (t, val) of
@@ -97,18 +83,18 @@ validate graph schema val = case schemaDRef schema of
     validateTypeDisallowed (Choice1of2 t) = if isType val t
         then validationError $ "values of type " ++ show t ++ " are not allowed here"
         else valid
-    validateTypeDisallowed (Choice2of2 s) = assert (not . isNothing $ validate graph s val) $ "value disallowed"
+    validateTypeDisallowed (Choice2of2 s) = assert (not . L.null $ validate graph s val) $ "value disallowed"
 
-assert :: Bool -> String -> SchemaValidator
+assert :: Bool -> String -> [ValidationError]
 assert True _ = valid
 assert False e = validationError e
 
-maybeCheck :: (a -> SchemaValidator) -> Maybe a -> SchemaValidator
+maybeCheck :: (a -> [ValidationError]) -> Maybe a -> [ValidationError]
 maybeCheck p (Just a) = p a
 maybeCheck _ _ = valid
 
-validateString :: Schema ref -> Text -> SchemaValidator
-validateString schema str = allValid
+validateString :: Schema ref -> Text -> [ValidationError]
+validateString schema str = L.concat
   [ checkMinLength $ schemaMinLength schema
   , maybeCheck checkMaxLength (schemaMaxLength schema)
   , maybeCheck checkPattern $ schemaPattern schema
@@ -120,8 +106,8 @@ validateString schema str = allValid
     checkPattern (Pattern source compiled) = assert (match compiled $ unpack str) $ "string must match pattern " ++ show source
     checkFormat format = maybe valid validationError $ validateFormat format str
 
-validateNumber :: Schema ref -> Number -> SchemaValidator
-validateNumber schema num = allValid
+validateNumber :: Schema ref -> Number -> [ValidationError]
+validateNumber schema num = L.concat
   [ maybeCheck (checkMinimum $ schemaExclusiveMinimum schema) $ schemaMinimum schema
   , maybeCheck (checkMaximum $ schemaExclusiveMaximum schema) $ schemaMaximum schema
   , maybeCheck checkDivisibleBy $ schemaDivisibleBy schema
@@ -135,15 +121,15 @@ validateNumber schema num = allValid
       else assert (num <= m) $ "number must be less than or equal " ++ show m
     checkDivisibleBy devisor = assert (num `isDivisibleBy` devisor) $ "number must be devisible by " ++ show devisor
 
-validateObject :: Ord ref => Graph Schema ref -> Schema ref -> A.Object -> SchemaValidator
-validateObject graph schema obj = allValid
-  [ allValid $ map (uncurry checkKeyValue) (H.toList obj)
-  , allValid $ map checkRequiredProperty requiredProperties
+validateObject :: Ord ref => Graph Schema ref -> Schema ref -> A.Object -> [ValidationError]
+validateObject graph schema obj = L.concat
+  [ L.concat $ map (uncurry checkKeyValue) (H.toList obj)
+  , L.concat $ map checkRequiredProperty requiredProperties
   ]
   where
-    checkKeyValue k v = allValid
+    checkKeyValue k v = L.concat
       [ maybeCheck (flip (validate graph) v) property
-      , allValid $ map (flip (validate graph) v . snd) matchingPatternsProperties
+      , L.concat $ map (flip (validate graph) v . snd) matchingPatternsProperties
       , if (isNothing property && L.null matchingPatternsProperties)
         then checkAdditionalProperties (schemaAdditionalProperties schema)
         else valid
@@ -156,7 +142,7 @@ validateObject graph schema obj = allValid
           Choice1of2 b -> assert b $ "additional property " ++ unpack k ++ " is not allowed"
           Choice2of2 s -> validate graph s v
         checkDependencies deps = case deps of
-          Choice1of2 props -> allValid $ flip map props $ \prop -> case H.lookup prop obj of
+          Choice1of2 props -> L.concat $ flip map props $ \prop -> case H.lookup prop obj of
             Nothing -> validationError $ "property " ++ unpack k ++ " depends on property " ++ show prop
             Just _ -> valid
           Choice2of2 depSchema -> validate graph depSchema (Object obj)
@@ -165,8 +151,8 @@ validateObject graph schema obj = allValid
       Nothing -> validationError $ "required property " ++ unpack key ++ " is missing"
       Just _ -> valid
 
-validateArray :: Ord ref => Graph Schema ref -> Schema ref -> A.Array -> SchemaValidator
-validateArray graph schema arr = allValid
+validateArray :: Ord ref => Graph Schema ref -> Schema ref -> A.Array -> [ValidationError]
+validateArray graph schema arr = L.concat
   [ checkMinItems $ schemaMinItems schema
   , maybeCheck checkMaxItems $ schemaMaxItems schema
   , if schemaUniqueItems schema then checkUnique else valid
@@ -179,12 +165,12 @@ validateArray graph schema arr = allValid
     checkMaxItems m = assert (len <= m) $ "array must have at most " ++ show m ++ " items"
     checkUnique = assert (vectorUnique arr) "all array items must be unique"
     checkItems items = case items of
-      Choice1of2 s -> assert (V.all (isNothing . validate graph s) arr) "all items in the array must validate against the schema given in 'items'"
+      Choice1of2 s -> assert (V.all (L.null . validate graph s) arr) "all items in the array must validate against the schema given in 'items'"
       Choice2of2 ss ->
         let additionalItems = drop (L.length ss) list
             checkAdditionalItems ai = case ai of
               Choice1of2 b -> assert (b || L.null additionalItems) $ "no additional items allowed"
-              Choice2of2 additionalSchema -> allValid $ map (validate graph additionalSchema) additionalItems
-        in allValid [ allValid $ zipWith (validate graph) ss list
+              Choice2of2 additionalSchema -> L.concat $ map (validate graph additionalSchema) additionalItems
+        in L.concat [ L.concat $ zipWith (validate graph) ss list
                     , checkAdditionalItems $ schemaAdditionalItems schema
                     ]

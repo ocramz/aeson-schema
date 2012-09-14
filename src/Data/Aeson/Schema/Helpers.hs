@@ -4,6 +4,7 @@ module Data.Aeson.Schema.Helpers
   , validateFormat
   , isDivisibleBy
   , replaceHiddenModules
+  , cleanPatterns
   , getUsedModules
   ) where
 
@@ -15,7 +16,7 @@ import           Data.Maybe             (maybeToList)
 import           Data.Ratio             (approxRational, denominator)
 import           Data.Text              (Text, unpack)
 import qualified Data.Vector            as V
-import           Language.Haskell.TH    (Name, mkName, nameBase, nameModule)
+import           Language.Haskell.TH    (Name, Pat (..), mkName, nameBase, nameModule)
 import           Text.Regex.PCRE        (makeRegexM)
 import           Text.Regex.PCRE.String (Regex)
 
@@ -46,6 +47,7 @@ formatValidators =
 validateFormat :: Text -> Text -> Maybe String
 validateFormat format str = ($ str) =<< join (lookup format formatValidators)
 
+-- | Test whether the first number is divisible by the second with no remainder.
 isDivisibleBy :: Number -> Number -> Bool
 isDivisibleBy (I i) (I j) = i `mod` j == 0
 isDivisibleBy a b = a == fromInteger 0 || denominator (approxRational (a / b) epsilon) `elem` [-1,1]
@@ -73,6 +75,15 @@ replaceHiddenModules = everywhere $ mkT replaceModule
         Nothing -> n
       _ -> n
 
+-- | Workaround for a bug in Template Haskell: TH parses the empty list
+-- constructor in patterns as @ConP (mkName "Prelude.[]") []@ instead of @ListP []@
+cleanPatterns :: Data a => a -> a
+cleanPatterns = everywhere $ mkT replacePattern
+  where
+    replacePattern (ConP n []) | nameBase n == "[]" = ListP []
+    replacePattern p = p
+
+-- | Extracts a list of used modules from a TH code tree.
 getUsedModules :: Data a => a -> [String]
 getUsedModules = nub . everything (++) ([] `mkQ` extractModule)
   where

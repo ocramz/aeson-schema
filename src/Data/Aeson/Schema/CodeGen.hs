@@ -121,7 +121,7 @@ generateModule modName = fmap (first $ renderCode . map rewrite) . generate
         imprts = map (\m -> "import " <> pack m) mods
         modDec = "module " <> modName <> " where"
     rewrite :: Declaration -> Declaration
-    rewrite (Declaration dec text) = Declaration (replaceHiddenModules dec) text
+    rewrite (Declaration dec text) = Declaration (replaceHiddenModules $ cleanPatterns dec) text
     rewrite a = a
     renderDeclaration :: Declaration -> Text
     renderDeclaration (Declaration _ (Just text)) = text
@@ -205,14 +205,16 @@ generateSchema decName name schema = case schemaDRef schema of
       [ match pat (normalB [| fail err |])[]
       , match wildP (normalB [| return () |]) []
       ]
-    disallowSchema sch = caseE [| validate $(varE $ mkName "graph") $(lift sch) $(varE val) |]
-      [ match (conP 'Just [wildP]) (normalB [| return () |]) []
-      , match wildP (normalB [| fail "disallowed" |]) []
-      ]
-    checkExtends exts = noBindS $ doE $ flip map exts $ noBindS . \sch -> caseE [| validate $(varE $ mkName "graph") $(lift sch) $(varE val) |]
-      [ match (conP 'Just [varP $ mkName "err"]) (normalB [| fail $(varE $ mkName "err") |]) []
-      , match wildP (normalB [| return () |]) []
-      ]
+    disallowSchema sch =
+      [| case validate $(varE $ mkName "graph") $(lift sch) $(varE val) of
+           [] -> fail "disallowed"
+           _  -> return ()
+      |]
+    checkExtends exts = noBindS $ doE $ flip map exts $ noBindS . \sch ->
+      [| case validate $(varE $ mkName "graph") $(lift sch) $(varE val) of
+           [] -> return ()
+           es -> fail $ unlines es
+      |]
     checkers = catMaybes
       [ checkEnum <$> schemaEnum schema
       , if null (schemaDisallow schema) then Nothing else Just (checkDisallow $ schemaDisallow schema)
@@ -346,21 +348,22 @@ generateObject decName name schema = do
              then fail $ unpack pname ++ " requires property " ++ unpack prop
              else return ()
            Just (Choice2of2 depSchema) -> case validate $(varE $ mkName "graph") depSchema (Object $(varE obj)) of
-             Nothing -> return ()
-             Just err -> fail err
+             [] -> return ()
+             es -> fail $ unlines es
       |]
     checkAdditionalProperties _ (Choice1of2 True) = [| return () |]
     checkAdditionalProperties _ (Choice1of2 False) = [| fail "additional properties are not allowed" |]
-    checkAdditionalProperties value (Choice2of2 sch) = caseE [| validate $(varE $ mkName "graph") $(lift sch) $(value) |]
-      [ match (conP 'Nothing []) (normalB [| return () |]) []
-      , match (conP 'Just [varP $ mkName "err"]) (normalB [| fail $(varE $ mkName "err") |]) []
-      ]
+    checkAdditionalProperties value (Choice2of2 sch) =
+      [| case validate $(varE $ mkName "graph") $(lift sch) $(value) of
+           [] -> return ()
+           es -> fail $ unlines es
+      |]
     checkPatternAndAdditionalProperties patterns additional = noBindS
       [| let items = HM.toList $(varE obj) in forM_ items $ \(pname, value) -> do
            let matchingPatterns = filter (flip PCRE.match (unpack pname) . patternCompiled . fst) $(lift patterns)
            forM_ matchingPatterns $ \(_, sch) -> case validate $(varE $ mkName "graph") sch value of
-             Nothing -> return ()
-             Just err -> fail err
+             [] -> return ()
+             es -> fail $ unlines es
            let isAdditionalProperty = null matchingPatterns && not (pname `elem` $(lift $ map fst $ HM.toList $ schemaProperties schema))
            when isAdditionalProperty $(checkAdditionalProperties [| value |] additional)
       |]
@@ -430,8 +433,8 @@ generateArray name schema = case schemaItems schema of
 generateAny :: Schema Text -> CodeGenM (TypeQ, ExpQ)
 generateAny schema = return (conT ''Value, code)
   where
-    val = mkName "val"
-    code = lamE [varP val] $ caseE [| validate $(varE $ mkName "graph") $(lift schema) $(varE val) |]
-      [ match (conP 'Nothing []) (normalB [| return $(varE val) |]) []
-      , match (conP 'Just [varP $ mkName "err"]) (normalB [| fail $(varE $ mkName "err") |]) []
-      ]
+    code =
+      [| \val -> case validate $(varE $ mkName "graph") $(lift schema) val of
+           [] -> return val
+           es -> fail $ unlines es
+      |]
