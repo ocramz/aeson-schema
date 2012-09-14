@@ -21,6 +21,7 @@ import           Data.Aeson.Schema.Types
 import           Data.Aeson.Schema.Choice
 import           Data.Aeson.Schema.Helpers
 
+-- | Errors encountered during validation
 type ValidationError = String
 
 validationError :: ValidationError -> [ValidationError]
@@ -29,7 +30,12 @@ validationError e = [e]
 valid :: [ValidationError]
 valid = []
 
-validate :: Ord ref => Graph Schema ref -> Schema ref -> Value -> [ValidationError]
+-- | Validates a JSON value against a schema.
+validate :: Ord ref
+         => Graph Schema ref -- ^ referenced schemas
+         -> Schema ref
+         -> Value
+         -> [ValidationError]
 validate graph schema val = case schemaDRef schema of
   Just ref -> case M.lookup ref graph of
     Nothing -> validationError "referenced schema is not in map"

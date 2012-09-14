@@ -101,34 +101,34 @@ instance Lift SchemaType where
 
 -- | JSON Schema (Draft 3) Core Schema Definition
 data Schema ref = Schema
-  { schemaType                 :: [Choice2 SchemaType (Schema ref)]          -- ^ a list of allowed schema types
-  , schemaProperties           :: HashMap Text (Schema ref)                  -- ^ subschemas for properties
-  , schemaPatternProperties    :: [(Pattern, Schema ref)]                    -- ^ all properties that match one of the regexes must validate against the associated schema
-  , schemaAdditionalProperties :: Choice2 Bool (Schema ref)                  -- ^ whether additional properties are allowed when the instance is an object, and if so, a schema that they have to validate against
-  , schemaItems                :: Maybe (Choice2 (Schema ref) [Schema ref])  -- ^ either a schema for all array items or a different schema for each position in the array
-  , schemaAdditionalItems      :: Choice2 Bool (Schema ref)                  -- ^ whether additional items are allowed
-  , schemaRequired             :: Bool                                       -- ^ when this schema is used in a property of another schema, this means that the property must have a value and not be undefined
-  , schemaDependencies         :: HashMap Text (Choice2 [Text] (Schema ref)) -- ^ map of dependencies (property a requires properties b and c, property a requires the instance to validate against another schema, etc.)
-  , schemaMinimum              :: Maybe Number                               -- ^ minimum value when the instance is a number
-  , schemaMaximum              :: Maybe Number                               -- ^ maximum value when the instance is a number
-  , schemaExclusiveMinimum     :: Bool                                       -- ^ whether the minimum value is exclusive (only numbers greater than the minimum are allowed)
-  , schemaExclusiveMaximum     :: Bool                                       -- ^ whether the maximum value is exclusive (only numbers less than the maximum are allowed)
-  , schemaMinItems             :: Int                                        -- ^ minimum length for arrays
-  , schemaMaxItems             :: Maybe Int                                  -- ^ maximum length for arrays
-  , schemaUniqueItems          :: Bool                                       -- ^ whether all array items must be distinct from each other
-  , schemaPattern              :: Maybe Pattern                              -- ^ regex for validating strings
-  , schemaMinLength            :: Int                                        -- ^ minimum length for strings
-  , schemaMaxLength            :: Maybe Int                                  -- ^ maximum length for strings
-  , schemaEnum                 :: Maybe [Value]                              -- ^ allowed values for this schema
-  , schemaEnumDescriptions     :: Maybe [Text]                               -- ^ extension by Google: description for the values in schemaEnum
-  , schemaDefault              :: Maybe Value                                -- ^ default value if this schema is used in a property of another schema and the value is undefined
-  , schemaTitle                :: Maybe Text                                 -- ^ short description of the instance property
-  , schemaDescription          :: Maybe Text                                 -- ^ full description of the purpose of the instance property
-  , schemaFormat               :: Maybe Text                                 -- ^ format of strings, e.g. 'data-time', 'regex' or 'email'
-  , schemaDivisibleBy          :: Maybe Number                               -- ^ when the instance is a number, it must be divisible by this number with no remainder
-  , schemaDisallow             :: [Choice2 SchemaType (Schema ref)]          -- ^ list of disallowed types
-  , schemaExtends              :: [Schema ref]                               -- ^ base schema that the current schema inherits from
-  , schemaId                   :: Maybe Text                                 -- ^ identifier of the current schema
+  { schemaType                 :: [Choice2 SchemaType (Schema ref)]          -- ^ List of allowed schema types
+  , schemaProperties           :: HashMap Text (Schema ref)                  -- ^ Subschemas for properties
+  , schemaPatternProperties    :: [(Pattern, Schema ref)]                    -- ^ All properties that match one of the regexes must validate against the associated schema
+  , schemaAdditionalProperties :: Choice2 Bool (Schema ref)                  -- ^ Whether additional properties are allowed when the instance is an object, and if so, a schema that they have to validate against
+  , schemaItems                :: Maybe (Choice2 (Schema ref) [Schema ref])  -- ^ Either a schema for all array items or a different schema for each position in the array
+  , schemaAdditionalItems      :: Choice2 Bool (Schema ref)                  -- ^ Whether additional items are allowed
+  , schemaRequired             :: Bool                                       -- ^ When this schema is used in a property of another schema, this means that the property must have a value and not be undefined
+  , schemaDependencies         :: HashMap Text (Choice2 [Text] (Schema ref)) -- ^ Map of dependencies (property a requires properties b and c, property a requires the instance to validate against another schema, etc.)
+  , schemaMinimum              :: Maybe Number                               -- ^ Minimum value when the instance is a number
+  , schemaMaximum              :: Maybe Number                               -- ^ Maximum value when the instance is a number
+  , schemaExclusiveMinimum     :: Bool                                       -- ^ Whether the minimum value is exclusive (only numbers greater than the minimum are allowed)
+  , schemaExclusiveMaximum     :: Bool                                       -- ^ Whether the maximum value is exclusive (only numbers less than the maximum are allowed)
+  , schemaMinItems             :: Int                                        -- ^ Minimum length for arrays
+  , schemaMaxItems             :: Maybe Int                                  -- ^ Maximum length for arrays
+  , schemaUniqueItems          :: Bool                                       -- ^ Whether all array items must be distinct from each other
+  , schemaPattern              :: Maybe Pattern                              -- ^ Regex for validating strings
+  , schemaMinLength            :: Int                                        -- ^ Minimum length for strings
+  , schemaMaxLength            :: Maybe Int                                  -- ^ Maximum length for strings
+  , schemaEnum                 :: Maybe [Value]                              -- ^ Allowed values for this schema
+  , schemaEnumDescriptions     :: Maybe [Text]                               -- ^ Extension by Google: description for the values in schemaEnum
+  , schemaDefault              :: Maybe Value                                -- ^ Default value if this schema is used in a property of another schema and the value is undefined
+  , schemaTitle                :: Maybe Text                                 -- ^ Short description of the instance property
+  , schemaDescription          :: Maybe Text                                 -- ^ Full description of the purpose of the instance property
+  , schemaFormat               :: Maybe Text                                 -- ^ Format of strings, e.g. 'data-time', 'regex' or 'email'
+  , schemaDivisibleBy          :: Maybe Number                               -- ^ When the instance is a number, it must be divisible by this number with no remainder
+  , schemaDisallow             :: [Choice2 SchemaType (Schema ref)]          -- ^ List of disallowed types
+  , schemaExtends              :: [Schema ref]                               -- ^ Base schema that the current schema inherits from
+  , schemaId                   :: Maybe Text                                 -- ^ Identifier of the current schema
   , schemaDRef                 :: Maybe ref                                  -- ^ $ref: reference to another schema
   , schemaDSchema              :: Maybe Text                                 -- ^ $schema: URI of a schema that defines the format of the current schema
   } deriving (Eq, Show)

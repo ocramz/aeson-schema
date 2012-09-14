@@ -1,4 +1,5 @@
 {-# OPTIONS_GHC -fno-warn-orphans #-}
+{-# LANGUAGE DeriveDataTypeable         #-}
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE TemplateHaskell            #-}
@@ -25,6 +26,7 @@ import           Data.Aeson.Types            (parse)
 import           Data.Attoparsec.Number      (Number (..))
 import           Data.Char                   (isAlphaNum, isLetter, toLower,
                                               toUpper)
+import           Data.Data                   (Data, Typeable)
 import           Data.Function               (on)
 import qualified Data.HashMap.Lazy           as HM
 import qualified Data.HashSet                as HS
@@ -42,25 +44,31 @@ import           Language.Haskell.TH.Syntax
 import qualified Text.Regex.PCRE             as PCRE
 import           Text.Regex.PCRE.String      (Regex)
 
-import           Data.Aeson.Schema.Types
 import           Data.Aeson.Schema.Choice
 import           Data.Aeson.Schema.Helpers
+import           Data.Aeson.Schema.Types
 import           Data.Aeson.Schema.Validator
-import           Data.Aeson.TH.Lift ()
+import           Data.Aeson.TH.Lift          ()
 
+-- | A top-level declaration.
+data Declaration = Declaration Dec (Maybe Text) -- ^ Optional textual declaration. This can be used for information (e.g. inline comments) that are not representable in TH.
+                 | Comment Text -- ^ Comment text
+                 deriving (Show, Eq, Typeable, Data)
 
-data Declaration = Declaration Dec (Maybe Text)
-                 | Comment Text
-                 deriving (Show, Eq)
+-- | Haskell code (without module declaration and imports)
 type Code = [Declaration]
 
 type StringSet = HS.HashSet String
 type SchemaTypes = M.Map Text Name
 
+-- Code generation monad: Keeps a set of used names, writes out the code and
+-- has a readonly map from schema identifiers to the names of the corresponding
+-- types in the generated code.
 newtype CodeGenM a = CodeGenM
   { unCodeGenM :: RWST SchemaTypes Code StringSet Q a
   } deriving (Monad, Applicative, Functor, MonadReader SchemaTypes, MonadWriter Code, MonadState StringSet)
 
+-- | Generates a fresh name
 codeGenNewName :: String -> StringSet -> (Name, StringSet)
 codeGenNewName s used = (Name (mkOccName free) NameS, HS.insert free used)
   where
@@ -95,6 +103,7 @@ instance Quasi CodeGenM where
 instance (Lift k, Lift v) => Lift (M.Map k v) where
   lift m = [| M.fromList $(lift $ M.toList m) |]
 
+-- | Needed modules that are not found by "getUsedModules".
 extraModules :: [String]
 extraModules =
   [ "Text.Regex" -- provides RegexMaker instances
@@ -103,15 +112,20 @@ extraModules =
   , "Data.Ratio"
   ]
 
+-- | Extracts all TH declarations
 getDecs :: Code -> [Dec]
-getDecs = catMaybes . map getDec
-  where getDec (Declaration dec _) = Just dec
-        getDec _ = Nothing
+getDecs code = [ dec | Declaration dec _ <- code ]
 
-generateTH :: Graph Schema Text -> Q ([Dec], M.Map Text Name)
+-- | Generate data-types and FromJSON instances for all schemas
+generateTH :: Graph Schema Text -- ^ Set of schemas
+           -> Q ([Dec], M.Map Text Name) -- ^ Generated code and mapping from schema identifiers to type names
 generateTH = fmap (first getDecs) . generate
 
-generateModule :: Text -> Graph Schema Text -> Q (Text, M.Map Text Name)
+-- | Generated a self-contained module that parses and validates values of
+-- a set of given schemas.
+generateModule :: Text -- ^ Name of the generated module
+               -> Graph Schema Text -- ^ Set of schemas
+               -> Q (Text, M.Map Text Name) -- ^ Module code and mapping from schema identifiers to type names
 generateModule modName = fmap (first $ renderCode . map rewrite) . generate
   where
     renderCode :: Code -> Text
@@ -128,6 +142,7 @@ generateModule modName = fmap (first $ renderCode . map rewrite) . generate
     renderDeclaration (Declaration dec Nothing)   = pack (pprint dec)
     renderDeclaration (Comment comment)           = T.unlines $ map (\line -> "-- " <> line) $ T.lines comment
 
+-- | Generate a generalized representation of the code in a Haskell module
 generate :: Graph Schema Text -> Q (Code, M.Map Text Name)
 generate graph = swap <$> evalRWST (unCodeGenM $ generateTopLevel graph >> return typeMap) typeMap used
   where
@@ -153,7 +168,10 @@ generateTopLevel graph = do
         ]
       tell [Declaration newtypeDec Nothing, Declaration fromJSONInst Nothing]
 
-generateSchema :: Maybe Name -> Text -> Schema Text -> CodeGenM ((TypeQ, ExpQ), Bool)
+generateSchema :: Maybe Name -- ^ Name to be used by type declarations
+               -> Text -- ^ Describes the position in the schema
+               -> Schema Text
+               -> CodeGenM ((TypeQ, ExpQ), Bool) -- ^ ((type of the generated representation (a), function :: Value -> Parser a), whether a newtype wrapper is necessary)
 generateSchema decName name schema = case schemaDRef schema of
   Just ref -> ask >>= \typesMap -> case M.lookup ref typesMap of
     Nothing -> fail "couldn't find referenced schema"
@@ -311,7 +329,10 @@ firstUpper (c:cs) = toUpper c : cs
 firstLower "" = ""
 firstLower (c:cs) = toLower c : cs
 
-generateObject :: Maybe Name -> Text -> Schema Text -> CodeGenM (TypeQ, ExpQ)
+generateObject :: Maybe Name -- ^ Name to be used by data declaration
+               -> Text
+               -> Schema Text
+               -> CodeGenM (TypeQ, ExpQ)
 generateObject decName name schema = do
   let propertiesList = HM.toList $ schemaProperties schema
   (propertyNames, propertyTypes, propertyParsers, defaultParsers) <- fmap unzip4 $ forM propertiesList $ \(fieldName, propertySchema) -> do
