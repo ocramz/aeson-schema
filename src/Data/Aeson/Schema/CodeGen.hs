@@ -129,7 +129,7 @@ generateModule :: Text -- ^ Name of the generated module
 generateModule modName = fmap (first $ renderCode . map rewrite) . generate
   where
     renderCode :: Code -> Text
-    renderCode code = T.unlines $ [modDec] ++ imprts ++ map renderDeclaration code
+    renderCode code = T.intercalate "\n\n" $ [modDec, T.intercalate "\n" imprts] ++ map renderDeclaration code
       where
         mods = sort $ extraModules ++ getUsedModules (getDecs code)
         imprts = map (\m -> "import " <> pack m) mods
