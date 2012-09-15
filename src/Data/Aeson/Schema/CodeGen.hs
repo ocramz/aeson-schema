@@ -193,8 +193,8 @@ generateSchema decName name schema = case schemaDRef schema of
       IntegerType -> (,True) <$> generateInteger schema
       BooleanType -> (,True) <$> generateBoolean
       ObjectType  -> case checkers of
-        [] -> (,False) <$> generateObject decName' name' schema
-        _  -> (,True)  <$> generateObject Nothing name' schema
+        [] -> generateObject decName' name' schema
+        _  -> (,True) . fst <$> generateObject Nothing name' schema
       ArrayType   -> (,True) <$> generateArray name' schema
       NullType    -> (,True) <$> generateNull
       AnyType     -> (,True) <$> generateAny schema
@@ -228,11 +228,7 @@ generateSchema decName name schema = case schemaDRef schema of
            [] -> fail "disallowed"
            _  -> return ()
       |]
-    checkExtends exts = noBindS $ doE $ flip map exts $ noBindS . \sch ->
-      [| case validate $(varE $ mkName "graph") $(lift sch) $(varE val) of
-           [] -> return ()
-           es -> fail $ unlines es
-      |]
+    checkExtends exts = noBindS $ doE $ flip map exts $ flip assertValidates (varE val) . lift
     checkers = catMaybes
       [ checkEnum <$> schemaEnum schema
       , if null (schemaDisallow schema) then Nothing else Just (checkDisallow $ schemaDisallow schema)
@@ -244,6 +240,13 @@ generateSchema decName name schema = case schemaDRef schema of
 
 assertStmt :: ExpQ -> String -> StmtQ
 assertStmt expr err = noBindS [| unless $(expr) (fail err) |]
+
+assertValidates :: ExpQ -> ExpQ -> StmtQ
+assertValidates schema value = noBindS
+  [| case validate $(varE $ mkName "graph") $schema $value of
+       [] -> return ()
+       es -> fail $ unlines es
+  |]
 
 lambdaPattern :: PatQ -> ExpQ -> ExpQ -> ExpQ
 lambdaPattern pat body err = lamE [varP val] $ caseE (varE val)
@@ -332,58 +335,68 @@ firstLower (c:cs) = toLower c : cs
 generateObject :: Maybe Name -- ^ Name to be used by data declaration
                -> Text
                -> Schema Text
-               -> CodeGenM (TypeQ, ExpQ)
-generateObject decName name schema = do
-  let propertiesList = HM.toList $ schemaProperties schema
-  (propertyNames, propertyTypes, propertyParsers, defaultParsers) <- fmap unzip4 $ forM propertiesList $ \(fieldName, propertySchema) -> do
-    let cleanedFieldName = cleanName $ unpack fieldName
-    propertyName <- qNewName $ firstLower cleanedFieldName
-    ((typ, expr), _) <- generateSchema Nothing (name <> pack (firstUpper cleanedFieldName)) propertySchema
-    let lookupProperty = [| HM.lookup $(lift fieldName) $(varE obj) |]
-    case schemaDefault propertySchema of
-      Just defaultValue -> do
-        defaultName <- qNewName $ "default" <> firstUpper cleanedFieldName
-        return (propertyName, typ, [| maybe (return $(varE defaultName)) $expr $lookupProperty |], Just $ valD (conP 'Success [varP defaultName]) (normalB [| parse $expr $(lift defaultValue) |]) [])
-      Nothing -> return $ if schemaRequired propertySchema
-        then (propertyName, typ, [| maybe (fail $(lift $ "required property " ++ unpack fieldName ++ " missing")) $expr $lookupProperty |], Nothing)
-        else (propertyName, conT ''Maybe `appT` typ, [| traverse $expr $lookupProperty |], Nothing)
-  conName <- maybe (qNewName $ firstUpper $ unpack name) return decName
-  let typ = conT conName
-  let dataCon = recC conName $ zipWith (\pname ptyp -> (pname,NotStrict,) <$> ptyp) propertyNames propertyTypes
-  dataDec <- runQ $ dataD (cxt []) conName [] [dataCon] []
-  let parser = foldl (\oparser propertyParser -> [| $oparser <*> $propertyParser |]) [| pure $(conE conName) |] propertyParsers
-  fromJSONInst <- runQ $ instanceD (cxt []) (conT ''FromJSON `appT` typ)
-    [ funD (mkName "parseJSON") -- cannot use a qualified name here
-        [ clause [conP 'Object [varP obj]] (normalB $ doE $ checkers ++ [noBindS parser]) (catMaybes defaultParsers)
-        , clause [wildP] (normalB [| fail "not an object" |]) []
-        ]
-    ]
-  tell [Declaration dataDec Nothing, Declaration fromJSONInst Nothing]
-  return (typ, [| parseJSON |])
+               -> CodeGenM ((TypeQ, ExpQ), Bool)
+generateObject decName name schema = case (propertiesList, schemaAdditionalProperties schema) of
+  ([], Choice2of2 additionalSchema) -> generateMap additionalSchema
+  _                                 -> generateDataDecl
   where
+    propertiesList = HM.toList $ schemaProperties schema
+    generateMap additionalSchema = case schemaPatternProperties schema of
+      [] -> do
+        ((additionalType, additionalParser), _) <- generateSchema Nothing (name <> "Item") additionalSchema
+        let parseAdditional = [| fmap M.fromList $ mapM (\(k,v) -> (,) k <$> $(additionalParser) v) $ HM.toList $(varE obj) |]
+        let parser = lambdaPattern (conP 'Object [varP obj])
+                                   (doE $ checkers ++ [noBindS parseAdditional])
+                                   [| fail "not an object" |]
+        let typ = [t| M.Map Text $(additionalType) |]
+        return ((typ, parser), True)
+      _  -> do
+        let validatesStmt = assertValidates (lift schema) [| Object $(varE obj) |]
+        let parser = lambdaPattern (conP 'Object [varP obj])
+                                   (doE $ validatesStmt : [noBindS [| return $ M.fromList $ HM.toList $(varE obj) |]])
+                                   [| fail "not an object" |]
+        return (([t| M.Map Text Value |], parser), True)
+    generateDataDecl = do
+      (propertyNames, propertyTypes, propertyParsers, defaultParsers) <- fmap unzip4 $ forM propertiesList $ \(fieldName, propertySchema) -> do
+        let cleanedFieldName = cleanName $ unpack fieldName
+        propertyName <- qNewName $ firstLower cleanedFieldName
+        ((typ, expr), _) <- generateSchema Nothing (name <> pack (firstUpper cleanedFieldName)) propertySchema
+        let lookupProperty = [| HM.lookup $(lift fieldName) $(varE obj) |]
+        case schemaDefault propertySchema of
+          Just defaultValue -> do
+            defaultName <- qNewName $ "default" <> firstUpper cleanedFieldName
+            return (propertyName, typ, [| maybe (return $(varE defaultName)) $expr $lookupProperty |], Just $ valD (conP 'Success [varP defaultName]) (normalB [| parse $expr $(lift defaultValue) |]) [])
+          Nothing -> return $ if schemaRequired propertySchema
+            then (propertyName, typ, [| maybe (fail $(lift $ "required property " ++ unpack fieldName ++ " missing")) $expr $lookupProperty |], Nothing)
+            else (propertyName, conT ''Maybe `appT` typ, [| traverse $expr $lookupProperty |], Nothing)
+      conName <- maybe (qNewName $ firstUpper $ unpack name) return decName
+      let typ = conT conName
+      let dataCon = recC conName $ zipWith (\pname ptyp -> (pname,NotStrict,) <$> ptyp) propertyNames propertyTypes
+      dataDec <- runQ $ dataD (cxt []) conName [] [dataCon] []
+      let parser = foldl (\oparser propertyParser -> [| $oparser <*> $propertyParser |]) [| pure $(conE conName) |] propertyParsers
+      fromJSONInst <- runQ $ instanceD (cxt []) (conT ''FromJSON `appT` typ)
+        [ funD (mkName "parseJSON") -- cannot use a qualified name here
+            [ clause [conP 'Object [varP obj]] (normalB $ doE $ checkers ++ [noBindS parser]) (catMaybes defaultParsers)
+            , clause [wildP] (normalB [| fail "not an object" |]) []
+            ]
+        ]
+      tell [Declaration dataDec Nothing, Declaration fromJSONInst Nothing]
+      return ((typ, [| parseJSON |]), False)
     obj = mkName "obj"
     checkDependencies deps = noBindS
       [| let items = HM.toList $(varE obj) in forM_ items $ \(pname, _) -> case HM.lookup pname $(lift deps) of
            Nothing -> return ()
            Just (Choice1of2 props) -> forM_ props $ \prop -> when (isNothing (HM.lookup prop $(varE obj))) $
              fail $ unpack pname ++ " requires property " ++ unpack prop
-           Just (Choice2of2 depSchema) -> case validate $(varE $ mkName "graph") depSchema (Object $(varE obj)) of
-             [] -> return ()
-             es -> fail $ unlines es
+           Just (Choice2of2 depSchema) -> $(doE [assertValidates [| depSchema |] [| Object $(varE obj) |]])
       |]
     checkAdditionalProperties _ (Choice1of2 True) = [| return () |]
     checkAdditionalProperties _ (Choice1of2 False) = [| fail "additional properties are not allowed" |]
-    checkAdditionalProperties value (Choice2of2 sch) =
-      [| case validate $(varE $ mkName "graph") $(lift sch) $(value) of
-           [] -> return ()
-           es -> fail $ unlines es
-      |]
+    checkAdditionalProperties value (Choice2of2 sch) = doE [assertValidates (lift sch) value]
     checkPatternAndAdditionalProperties patterns additional = noBindS
       [| let items = HM.toList $(varE obj) in forM_ items $ \(pname, value) -> do
            let matchingPatterns = filter (flip PCRE.match (unpack pname) . patternCompiled . fst) $(lift patterns)
-           forM_ matchingPatterns $ \(_, sch) -> case validate $(varE $ mkName "graph") sch value of
-             [] -> return ()
-             es -> fail $ unlines es
+           forM_ matchingPatterns $ \(_, sch) -> $(doE [assertValidates [| sch |] [| value |]])
            let isAdditionalProperty = null matchingPatterns && pname `notElem` $(lift $ map fst $ HM.toList $ schemaProperties schema)
            when isAdditionalProperty $(checkAdditionalProperties [| value |] additional)
       |]
@@ -453,8 +466,8 @@ generateArray name schema = case schemaItems schema of
 generateAny :: Schema Text -> CodeGenM (TypeQ, ExpQ)
 generateAny schema = return (conT ''Value, code)
   where
-    code =
-      [| \val -> case validate $(varE $ mkName "graph") $(lift schema) val of
-           [] -> return val
-           es -> fail $ unlines es
-      |]
+    val = mkName "val"
+    code = lamE [varP val]
+                (doE [ assertValidates (lift schema) (varE val)
+                     , noBindS [| return $(varE val) |]
+                     ])
