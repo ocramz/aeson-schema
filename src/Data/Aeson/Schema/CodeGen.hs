@@ -162,7 +162,7 @@ generateTopLevel graph = do
     ((typeQ, exprQ), defNewtype) <- generateSchema (Just typeName) name schema
     when defNewtype $ do
       let newtypeCon = normalC typeName [strictType notStrict typeQ]
-      newtypeDec <- runQ $ newtypeD (cxt []) typeName [] newtypeCon []
+      newtypeDec <- runQ $ newtypeD (cxt []) typeName [] newtypeCon derivingTypeclasses
       fromJSONInst <- runQ $ instanceD (cxt []) (conT ''FromJSON `appT` conT typeName)
         [ valD (varP $ mkName "parseJSON") (normalB [| fmap $(conE typeName) . $exprQ |]) []
         ]
@@ -237,6 +237,9 @@ generateSchema decName name schema = case schemaDRef schema of
     wrap parser = if null checkers
       then parser
       else lamE [varP val] $ doE $ checkers ++ [noBindS $ parser `appE` varE val]
+
+derivingTypeclasses :: [Name]
+derivingTypeclasses = [''Eq, ''Ord, ''Read, ''Show]
 
 assertStmt :: ExpQ -> String -> StmtQ
 assertStmt expr err = noBindS [| unless $(expr) (fail err) |]
@@ -372,7 +375,7 @@ generateObject decName name schema = case (propertiesList, schemaAdditionalPrope
       conName <- maybe (qNewName $ firstUpper $ unpack name) return decName
       let typ = conT conName
       let dataCon = recC conName $ zipWith (\pname ptyp -> (pname,NotStrict,) <$> ptyp) propertyNames propertyTypes
-      dataDec <- runQ $ dataD (cxt []) conName [] [dataCon] []
+      dataDec <- runQ $ dataD (cxt []) conName [] [dataCon] derivingTypeclasses
       let parser = foldl (\oparser propertyParser -> [| $oparser <*> $propertyParser |]) [| pure $(conE conName) |] propertyParsers
       fromJSONInst <- runQ $ instanceD (cxt []) (conT ''FromJSON `appT` typ)
         [ funD (mkName "parseJSON") -- cannot use a qualified name here
