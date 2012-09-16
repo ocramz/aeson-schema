@@ -361,9 +361,9 @@ generateObject decName name schema = case (propertiesList, schemaAdditionalPrope
         return (([t| M.Map Text Value |], parser), True)
     generateDataDecl = do
       (propertyNames, propertyTypes, propertyParsers, defaultParsers) <- fmap unzip4 $ forM propertiesList $ \(fieldName, propertySchema) -> do
-        let cleanedFieldName = cleanName $ unpack fieldName
+        let cleanedFieldName = cleanName $ unpack name ++ firstUpper (unpack fieldName)
         propertyName <- qNewName $ firstLower cleanedFieldName
-        ((typ, expr), _) <- generateSchema Nothing (name <> pack (firstUpper cleanedFieldName)) propertySchema
+        ((typ, expr), _) <- generateSchema Nothing (pack (firstUpper cleanedFieldName)) propertySchema
         let lookupProperty = [| HM.lookup $(lift fieldName) $(varE obj) |]
         case schemaDefault propertySchema of
           Just defaultValue -> do
