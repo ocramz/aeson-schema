@@ -239,7 +239,7 @@ generateSchema decName name schema = case schemaDRef schema of
       else lamE [varP val] $ doE $ checkers ++ [noBindS $ parser `appE` varE val]
 
 derivingTypeclasses :: [Name]
-derivingTypeclasses = [''Eq, ''Ord, ''Read, ''Show]
+derivingTypeclasses = [''Eq, ''Show]
 
 assertStmt :: ExpQ -> String -> StmtQ
 assertStmt expr err = noBindS [| unless $(expr) (fail err) |]
