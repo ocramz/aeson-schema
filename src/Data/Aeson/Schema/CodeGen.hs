@@ -1,7 +1,5 @@
 {-# OPTIONS_GHC -fno-warn-orphans #-}
-{-# LANGUAGE DeriveDataTypeable         #-}
 {-# LANGUAGE FlexibleInstances          #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE TemplateHaskell            #-}
 {-# LANGUAGE TupleSections              #-}
 
@@ -17,17 +15,13 @@ import           Control.Applicative         (Applicative (..), (<$>), (<*>),
                                               (<|>))
 import           Control.Arrow               (first, second)
 import           Control.Monad               (forM_, unless, when, zipWithM)
-import           Control.Monad.RWS.Lazy      (MonadReader (..), MonadState (..),
-                                              MonadWriter (..), RWST (..),
-                                              evalRWST)
-import qualified Control.Monad.Trans.Class   as MT
+import           Control.Monad.RWS.Lazy      (MonadReader (..), 
+                                              MonadWriter (..), evalRWST)
 import           Data.Aeson
 import           Data.Aeson.Types            (parse)
 import           Data.Attoparsec.Number      (Number (..))
 import           Data.Char                   (isAlphaNum, isLetter, toLower,
                                               toUpper)
-import           Data.Data                   (Data, Typeable)
-import           Data.Function               (on)
 import qualified Data.HashMap.Lazy           as HM
 import qualified Data.HashSet                as HS
 import           Data.List                   (mapAccumL, sort, unzip4)
@@ -45,60 +39,13 @@ import qualified Text.Regex.PCRE             as PCRE
 import           Text.Regex.PCRE.String      (Regex)
 
 import           Data.Aeson.Schema.Choice
+import           Data.Aeson.Schema.CodeGenM
 import           Data.Aeson.Schema.Helpers
 import           Data.Aeson.Schema.Types
 import           Data.Aeson.Schema.Validator
 import           Data.Aeson.TH.Lift          ()
 
--- | A top-level declaration.
-data Declaration = Declaration Dec (Maybe Text) -- ^ Optional textual declaration. This can be used for information (e.g. inline comments) that are not representable in TH.
-                 | Comment Text -- ^ Comment text
-                 deriving (Show, Eq, Typeable, Data)
-
--- | Haskell code (without module declaration and imports)
-type Code = [Declaration]
-
-type StringSet = HS.HashSet String
 type SchemaTypes = M.Map Text Name
-
--- Code generation monad: Keeps a set of used names, writes out the code and
--- has a readonly map from schema identifiers to the names of the corresponding
--- types in the generated code.
-newtype CodeGenM a = CodeGenM
-  { unCodeGenM :: RWST SchemaTypes Code StringSet Q a
-  } deriving (Monad, Applicative, Functor, MonadReader SchemaTypes, MonadWriter Code, MonadState StringSet)
-
--- | Generates a fresh name
-codeGenNewName :: String -> StringSet -> (Name, StringSet)
-codeGenNewName s used = (Name (mkOccName free) NameS, HS.insert free used)
-  where
-    free = head $ dropWhile (`HS.member` used) $ (if validName s then (s:) else id) $ map (\i -> s ++ "_" ++ show i) ([1..] :: [Int])
-    -- taken from http://www.haskell.org/haskellwiki/Keywords
-    haskellKeywords = HS.fromList
-      [ "as", "case", "of", "class", "data", "data family", "data instance"
-      , "default", "deriving", "deriving instance", "do", "forall", "foreign"
-      , "hiding", "if", "then", "else", "import", "infix", "infixl", "infixr"
-      , "instance", "let", "in", "mdo", "module", "newtype", "proc"
-      , "qualified", "rec", "type", "type family", "type instance", "where"
-      ]
-    validName n = not (n `elem` ["", "_"] || n `HS.member` haskellKeywords)
-
-instance Quasi CodeGenM where
-  qNewName = state . codeGenNewName
-  qReport b = CodeGenM . MT.lift . report b
-  qRecover (CodeGenM handler) (CodeGenM action) = do
-    graph <- ask
-    currState <- get
-    (a, s, w) <- CodeGenM $ MT.lift $ (recover `on` \m -> runRWST m graph currState) handler action
-    put s
-    tell w
-    return a
-  qLookupName b = CodeGenM . MT.lift . (if b then lookupTypeName else lookupValueName)
-  qReify = CodeGenM . MT.lift . reify
-  qReifyInstances name = CodeGenM . MT.lift . reifyInstances name
-  qLocation = CodeGenM . MT.lift $ location
-  qRunIO = CodeGenM . MT.lift . runIO
-  qAddDependentFile = CodeGenM . MT.lift . addDependentFile
 
 instance (Lift k, Lift v) => Lift (M.Map k v) where
   lift m = [| M.fromList $(lift $ M.toList m) |]
@@ -149,7 +96,7 @@ generate graph = swap <$> evalRWST (unCodeGenM $ generateTopLevel graph >> retur
     (used, typeMap) = second M.fromList $ mapAccumL nameAccum HS.empty (M.keys graph)
     nameAccum usedNames schemaName = second (schemaName,) $ swap $ codeGenNewName (firstUpper $ unpack schemaName) usedNames
 
-generateTopLevel :: Graph Schema Text -> CodeGenM ()
+generateTopLevel :: Graph Schema Text -> CodeGenM SchemaTypes ()
 generateTopLevel graph = do
   typeMap <- ask
   graphN <- qNewName "graph"
@@ -171,7 +118,7 @@ generateTopLevel graph = do
 generateSchema :: Maybe Name -- ^ Name to be used by type declarations
                -> Text -- ^ Describes the position in the schema
                -> Schema Text
-               -> CodeGenM ((TypeQ, ExpQ), Bool) -- ^ ((type of the generated representation (a), function :: Value -> Parser a), whether a newtype wrapper is necessary)
+               -> CodeGenM SchemaTypes ((TypeQ, ExpQ), Bool) -- ^ ((type of the generated representation (a), function :: Value -> Parser a), whether a newtype wrapper is necessary)
 generateSchema decName name schema = case schemaDRef schema of
   Just ref -> ask >>= \typesMap -> case M.lookup ref typesMap of
     Nothing -> fail "couldn't find referenced schema"
@@ -186,7 +133,7 @@ generateSchema decName name schema = case schemaDRef schema of
       subs <- fmap (map fst) $ zipWithM (choice2 (flip $ generateSimpleType Nothing) (flip $ generateSchema Nothing)) unionType names
       (,True) <$> generateUnionType subs
   where
-    generateSimpleType :: Maybe Name -> Text -> SchemaType -> CodeGenM ((TypeQ, ExpQ), Bool)
+    generateSimpleType :: Maybe Name -> Text -> SchemaType -> CodeGenM SchemaTypes ((TypeQ, ExpQ), Bool)
     generateSimpleType decName' name' typ = case typ of
       StringType  -> (,True) <$> generateString schema
       NumberType  -> (,True) <$> generateNumber schema
@@ -198,7 +145,7 @@ generateSchema decName name schema = case schemaDRef schema of
       ArrayType   -> (,True) <$> generateArray name' schema
       NullType    -> (,True) <$> generateNull
       AnyType     -> (,True) <$> generateAny schema
-    generateUnionType :: [(TypeQ, ExpQ)] -> CodeGenM (TypeQ, ExpQ)
+    generateUnionType :: [(TypeQ, ExpQ)] -> CodeGenM SchemaTypes (TypeQ, ExpQ)
     generateUnionType union = return (typ, lamE [varP val] code)
       where
         n = length union
@@ -258,7 +205,7 @@ lambdaPattern pat body err = lamE [varP val] $ caseE (varE val)
   ]
   where val = mkName "val"
 
-generateString :: Schema Text -> CodeGenM (TypeQ, ExpQ)
+generateString :: Schema Text -> CodeGenM SchemaTypes (TypeQ, ExpQ)
 generateString schema = return (conT ''Text, code)
   where
     str = mkName "str"
@@ -279,7 +226,7 @@ generateString schema = return (conT ''Text, code)
                          (doE $ checkers ++ [noBindS [| return $(varE str) |]])
                          [| fail "not a string" |]
 
-generateNumber :: Schema Text -> CodeGenM (TypeQ, ExpQ)
+generateNumber :: Schema Text -> CodeGenM SchemaTypes (TypeQ, ExpQ)
 generateNumber schema = return (conT ''Number, code)
   where
     num = mkName "num"
@@ -287,7 +234,7 @@ generateNumber schema = return (conT ''Number, code)
                          (doE $ numberCheckers num schema ++ [noBindS [| return $(varE num) |]])
                          [| fail "not a number" |]
 
-generateInteger :: Schema Text -> CodeGenM (TypeQ, ExpQ)
+generateInteger :: Schema Text -> CodeGenM SchemaTypes (TypeQ, ExpQ)
 generateInteger schema = return (conT ''Integer, code)
   where
     num = mkName "num"
@@ -311,10 +258,10 @@ numberCheckers num schema = catMaybes
       else assertStmt [| $(varE num) <= m |] $ "number must be less than or equal " ++ show m
     checkDivisibleBy devisor = assertStmt [| $(varE num) `isDivisibleBy` devisor |] $ "number must be devisible by " ++ show devisor
 
-generateBoolean :: CodeGenM (TypeQ, ExpQ)
+generateBoolean :: CodeGenM SchemaTypes (TypeQ, ExpQ)
 generateBoolean = return (conT ''Bool, varE 'parseJSON)
 
-generateNull :: CodeGenM (TypeQ, ExpQ)
+generateNull :: CodeGenM SchemaTypes (TypeQ, ExpQ)
 generateNull = return (tupleT 0, code)
   where
     code = lambdaPattern (conP 'Null [])
@@ -338,7 +285,7 @@ firstLower (c:cs) = toLower c : cs
 generateObject :: Maybe Name -- ^ Name to be used by data declaration
                -> Text
                -> Schema Text
-               -> CodeGenM ((TypeQ, ExpQ), Bool)
+               -> CodeGenM SchemaTypes ((TypeQ, ExpQ), Bool)
 generateObject decName name schema = case (propertiesList, schemaAdditionalProperties schema) of
   ([], Choice2of2 additionalSchema) -> generateMap additionalSchema
   _                                 -> generateDataDecl
@@ -412,7 +359,7 @@ generateObject decName name schema = case (propertiesList, schemaAdditionalPrope
         else Just (checkPatternAndAdditionalProperties (schemaPatternProperties schema) (schemaAdditionalProperties schema))
       ]
 
-generateArray :: Text -> Schema Text -> CodeGenM (TypeQ, ExpQ)
+generateArray :: Text -> Schema Text -> CodeGenM SchemaTypes (TypeQ, ExpQ)
 generateArray name schema = case schemaItems schema of
   Nothing -> monomorphicArray (conT ''Value) (varE 'parseJSON)
   Just (Choice1of2 itemsSchema) -> do
@@ -426,7 +373,7 @@ generateArray name schema = case schemaItems schema of
       Choice2of2 sch -> Choice2of2 . fst <$> generateSchema Nothing (name <> "AdditionalItems") sch
     tupleArray items additionalItems
   where
-    tupleArray :: [(TypeQ, ExpQ)] -> Choice2 Bool (TypeQ, ExpQ) -> CodeGenM (TypeQ, ExpQ)
+    tupleArray :: [(TypeQ, ExpQ)] -> Choice2 Bool (TypeQ, ExpQ) -> CodeGenM SchemaTypes (TypeQ, ExpQ)
     tupleArray items additionalItems = return (tupleType, code $ additionalCheckers ++ [noBindS tupleParser])
       where
         items' = flip map (zip [0..] items) $ \(i, (itemType, itemParser)) ->
@@ -450,7 +397,7 @@ generateArray name schema = case schemaItems schema of
                      (tupleT $ length items'', [| pure $(conE $ tupleDataName $ length items'') |])
                      items''
 
-    monomorphicArray :: TypeQ -> ExpQ -> CodeGenM (TypeQ, ExpQ)
+    monomorphicArray :: TypeQ -> ExpQ -> CodeGenM SchemaTypes (TypeQ, ExpQ)
     monomorphicArray itemType itemCode = return (listT `appT` itemType, code [noBindS [| mapM $(itemCode) (V.toList $(varE arr)) |]])
 
     arr = mkName "arr"
@@ -466,7 +413,7 @@ generateArray name schema = case schemaItems schema of
       , if schemaUniqueItems schema then Just checkUnique else Nothing
       ]
 
-generateAny :: Schema Text -> CodeGenM (TypeQ, ExpQ)
+generateAny :: Schema Text -> CodeGenM SchemaTypes (TypeQ, ExpQ)
 generateAny schema = return (conT ''Value, code)
   where
     val = mkName "val"
