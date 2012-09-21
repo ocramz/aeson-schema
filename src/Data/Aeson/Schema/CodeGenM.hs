@@ -5,6 +5,7 @@ module Data.Aeson.Schema.CodeGenM
   ( Declaration (..)
   , Code
   , CodeGenM (..)
+  , renderDeclaration
   , codeGenNewName
   ) where
 
@@ -15,13 +16,22 @@ import qualified Control.Monad.Trans.Class  as MT
 import           Data.Data                  (Data, Typeable)
 import           Data.Function              (on)
 import qualified Data.HashSet               as HS
+import           Data.Monoid                ((<>))
 import           Data.Text                  (Text)
+import qualified Data.Text                  as T
+import           Language.Haskell.TH.Ppr    (pprint)
 import           Language.Haskell.TH.Syntax
 
 -- | A top-level declaration.
 data Declaration = Declaration Dec (Maybe Text) -- ^ Optional textual declaration. This can be used for information (e.g. inline comments) that are not representable in TH.
                  | Comment Text -- ^ Comment text
                  deriving (Show, Eq, Typeable, Data)
+
+-- | Render a declaration. When a declaration contains both a TH syntax tree and a text representation, the text representation is preferred.
+renderDeclaration :: Declaration -> Text
+renderDeclaration (Declaration _ (Just text)) = text
+renderDeclaration (Declaration dec Nothing)   = T.pack (pprint dec)
+renderDeclaration (Comment comment)           = T.unlines $ map (\line -> "-- " <> line) $ T.lines comment
 
 -- | Haskell code (without module declaration and imports)
 type Code = [Declaration]

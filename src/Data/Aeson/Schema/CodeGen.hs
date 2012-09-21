@@ -84,10 +84,6 @@ generateModule modName = fmap (first $ renderCode . map rewrite) . generate
     rewrite :: Declaration -> Declaration
     rewrite (Declaration dec text) = Declaration (replaceHiddenModules $ cleanPatterns dec) text
     rewrite a = a
-    renderDeclaration :: Declaration -> Text
-    renderDeclaration (Declaration _ (Just text)) = text
-    renderDeclaration (Declaration dec Nothing)   = pack (pprint dec)
-    renderDeclaration (Comment comment)           = T.unlines $ map (\line -> "-- " <> line) $ T.lines comment
 
 -- | Generate a generalized representation of the code in a Haskell module
 generate :: Graph Schema Text -> Q (Code, M.Map Text Name)
