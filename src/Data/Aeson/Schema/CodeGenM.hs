@@ -10,6 +10,7 @@ module Data.Aeson.Schema.CodeGenM
   ) where
 
 import           Control.Applicative        (Applicative (..))
+import           Control.Monad.IO.Class     (MonadIO (..))
 import           Control.Monad.RWS.Lazy     (MonadReader (..), MonadState (..),
                                              MonadWriter (..), RWST (..))
 import qualified Control.Monad.Trans.Class  as MT
@@ -76,3 +77,6 @@ instance Quasi (CodeGenM s) where
   qLocation = CodeGenM . MT.lift $ location
   qRunIO = CodeGenM . MT.lift . runIO
   qAddDependentFile = CodeGenM . MT.lift . addDependentFile
+
+instance MonadIO (CodeGenM s) where
+  liftIO = qRunIO
