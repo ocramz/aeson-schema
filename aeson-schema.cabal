@@ -27,7 +27,7 @@ library
   other-modules:       Data.Aeson.Schema.Choice.TH,
                        Data.Aeson.TH.Lift
   extensions:          OverloadedStrings
-  build-depends:       base == 4.5.*,
+  build-depends:       base > 4 && < 5,
                        aeson >= 0.6.0.2,
                        vector >= 0.7.1,
                        text >= 0.11.1.0,
