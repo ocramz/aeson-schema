@@ -1,5 +1,6 @@
 {-# LANGUAGE DeriveDataTypeable         #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE TupleSections #-}
 
 module Data.Aeson.Schema.CodeGenM
   ( Declaration (..)
@@ -7,9 +8,10 @@ module Data.Aeson.Schema.CodeGenM
   , CodeGenM (..)
   , renderDeclaration
   , codeGenNewName
+  , genRecord
   ) where
 
-import           Control.Applicative        (Applicative (..))
+import           Control.Applicative        (Applicative (..), (<$>))
 import           Control.Monad.IO.Class     (MonadIO (..))
 import           Control.Monad.RWS.Lazy     (MonadReader (..), MonadState (..),
                                              MonadWriter (..), RWST (..))
@@ -17,10 +19,10 @@ import qualified Control.Monad.Trans.Class  as MT
 import           Data.Data                  (Data, Typeable)
 import           Data.Function              (on)
 import qualified Data.HashSet               as HS
-import           Data.Monoid                ((<>))
-import           Data.Text                  (Text)
+import           Data.Monoid                ((<>), mconcat)
+import           Data.Text                  (Text, pack)
 import qualified Data.Text                  as T
-import           Language.Haskell.TH.Ppr    (pprint)
+import           Language.Haskell.TH
 import           Language.Haskell.TH.Syntax
 
 -- | A top-level declaration.
@@ -80,3 +82,35 @@ instance Quasi (CodeGenM s) where
 
 instance MonadIO (CodeGenM s) where
   liftIO = qRunIO
+
+-- ^ Generates a record data declaration where the fields may have descriptions for Haddock
+genRecord :: Name -- ^ Type and constructor name
+               -> [(Name, TypeQ, Maybe Text)] -- ^ Fields
+               -> [Name] -- ^ Deriving typeclasses
+               -> Q Declaration
+genRecord name fields classes = Declaration <$> dataDec
+                                            <*> (Just . recordBlock . map fieldLine <$> fields')
+  where
+    fields' :: Q [(Name, Type, Maybe Text)]
+    fields' = mapM (\(fieldName, fieldType, fieldDesc) -> (fieldName,,fieldDesc) <$> fieldType) fields
+    dataLine, derivingClause :: Text
+    dataLine = "data " <> pack (nameBase name) <> " = " <> pack (nameBase name)
+    derivingClause = "deriving (" <> T.intercalate ", " (map (\n -> maybe "" ((<> ".") . pack) (nameModule n) <> pack (nameBase n)) classes) <> ")"
+    fieldLine :: (Name, Type, Maybe Text) -> Text
+    fieldLine (fieldName, fieldType, fieldDesc) = mconcat
+      [ pack (nameBase fieldName)
+      , " :: "
+      , pack (pprint fieldType)
+      , maybe "" ((" " <>) . renderComment . ("^ " <>)) fieldDesc
+      ]
+    renderComment :: Text -> Text
+    renderComment = T.unlines . map ("-- " <>) . T.lines
+    recordBlock :: [Text] -> Text
+    recordBlock [] = dataLine <> " " <> derivingClause
+    recordBlock (l:ls) = T.unlines $ [dataLine] ++ map indent (["{ " <> l] ++ map (", " <>) ls ++ ["} " <> derivingClause])
+    indent :: Text -> Text
+    indent = ("  " <>)
+
+    -- Template Haskell
+    constructor = recC name $ map (\(fieldName, fieldType, _) -> (fieldName,NotStrict,) <$> fieldType) fields
+    dataDec = dataD (cxt []) name [] [constructor] classes

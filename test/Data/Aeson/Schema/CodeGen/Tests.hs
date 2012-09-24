@@ -96,10 +96,7 @@ instance Arbitrary Value where
   arbitrary = arbitraryValue 3
 
 instance Arbitrary SchemaType where
-  arbitrary = elements
-    [ StringType, NumberType, IntegerType, BooleanType
-    , ObjectType, ArrayType, NullType, AnyType
-    ]
+  arbitrary = elements [minBound..maxBound]
 
 arbitrarySchema :: (Eq a) => Int -> Gen (Schema a)
 arbitrarySchema 0 = return empty
@@ -108,11 +105,13 @@ arbitrarySchema depth = do
   required <- arbitrary
   disallow <- rareShortListOf (choice2of arbitrary subSchema)
   extends <- rareShortListOf subSchema
+  description <- arbitrary
   let sch0 = empty
         { schemaType = typ
         , schemaRequired = required
         , schemaDisallow = disallow
         , schemaExtends = extends
+        , schemaDescription = description
         }
   sch1 <- flip (foldl (>=>) return) sch0
     [ modifyIf (Choice1of2 ArrayType `elem` typ) $ \sch -> do

@@ -347,9 +347,12 @@ generateObject decName name schema = case (propertiesList, schemaAdditionalPrope
                  , Nothing
                  )
       conName <- maybe (qNewName $ firstUpper $ unpack name) return decName
+      recordDeclaration <- runQ $ genRecord conName
+                                            (zip3 propertyNames
+                                                  (map (fmap replaceHiddenModules) propertyTypes)
+                                                  (map (schemaDescription . snd) propertiesList))
+                                            derivingTypeclasses
       let typ = conT conName
-      let dataCon = recC conName $ zipWith (\pname ptyp -> (pname,NotStrict,) <$> ptyp) propertyNames propertyTypes
-      dataDec <- runQ $ dataD (cxt []) conName [] [dataCon] derivingTypeclasses
       let parser = foldl (\oparser propertyParser -> [| $oparser <*> $propertyParser |]) [| pure $(conE conName) |] propertyParsers
       fromJSONInst <- runQ $ instanceD (cxt []) (conT ''FromJSON `appT` typ)
         [ funD (mkName "parseJSON") -- cannot use a qualified name here
@@ -364,7 +367,7 @@ generateObject decName name schema = case (propertiesList, schemaAdditionalPrope
           ]
         ]
       tell
-        [ Declaration dataDec Nothing
+        [ recordDeclaration
         , Declaration fromJSONInst Nothing
         , Declaration toJSONInst Nothing
         ]
