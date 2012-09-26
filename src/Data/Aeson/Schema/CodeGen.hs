@@ -308,7 +308,7 @@ generateObject decName name schema = case (propertiesList, schemaAdditionalPrope
                                    (doE $ checkers ++ [noBindS parseAdditional])
                                    [| fail "not an object" |]
         let typ = [t| M.Map Text $(additionalType) |]
-        let to = [| Object . HM.fromList . map $(additionalTo) . M.toList |]
+        let to = [| Object . HM.fromList . map (second $(additionalTo)) . M.toList |]
         return ((typ, parser, to), True)
       _  -> do
         let validatesStmt = assertValidates (lift schema) [| Object $(varE obj) |]

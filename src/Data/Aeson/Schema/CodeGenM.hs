@@ -104,7 +104,7 @@ genRecord name fields classes = Declaration <$> dataDec
       , maybe "" ((" " <>) . renderComment . ("^ " <>)) fieldDesc
       ]
     renderComment :: Text -> Text
-    renderComment = T.unlines . map ("-- " <>) . T.lines
+    renderComment = T.intercalate "\n" . map ("-- " <>) . T.lines
     recordBlock :: [Text] -> Text
     recordBlock [] = dataLine <> " " <> derivingClause
     recordBlock (l:ls) = T.unlines $ [dataLine] ++ map indent (["{ " <> l] ++ map (", " <>) ls ++ ["} " <> derivingClause])

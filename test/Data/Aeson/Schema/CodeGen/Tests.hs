@@ -2,6 +2,7 @@
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE FlexibleInstances         #-}
 {-# LANGUAGE ImpredicativeTypes        #-}
+{-# LANGUAGE QuasiQuotes               #-}
 {-# LANGUAGE RankNTypes                #-}
 {-# LANGUAGE ScopedTypeVariables       #-}
 {-# LANGUAGE TupleSections             #-}
@@ -232,6 +233,18 @@ tests = do
             }
           graph = M.singleton "A" schema
         (code, _) <- runQ $ generateModule "TestOneTuple" graph
+        result <- typecheck code forkLift
+        case result of
+          Left err -> HU.assertFailure $ show err
+          Right _  -> return ()
+    , testCase "simple map" $ do
+        let
+          schema = [schemaQQ| {
+              "type": "object",
+              "additionalProperties": { "type": "number" }
+            } |]
+          graph = M.singleton "A" schema
+        (code, _) <- runQ $ generateModule "SimpleMap" graph
         result <- typecheck code forkLift
         case result of
           Left err -> HU.assertFailure $ show err
