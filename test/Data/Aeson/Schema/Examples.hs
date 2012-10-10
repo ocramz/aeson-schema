@@ -16,19 +16,7 @@ examples :: (String -> IO () -> a)
          -> (Graph Schema Text -> Schema Text -> Value -> IO ())
          -> [a]
 examples testCase assertValid' assertInvalid' =
-  [ testCase "divisibleBy" $ do
-      let by2 = [schemaQQ| { "type": "number", "divisibleBy": 2 } |]
-      assertValid by2 [aesonLitQQ| 2 |]
-      assertValid by2 [aesonLitQQ| 4 |]
-      assertValid by2 [aesonLitQQ| 0 |]
-      assertInvalid by2 [aesonLitQQ| 1 |]
-      assertInvalid by2 [aesonLitQQ| 3 |]
-      let byOneAndHalf = [schemaQQ| { "type": "number", "divisibleBy": 1.5 }]
-      assertValid byOneAndHalf [aesonLitQQ| 1.5 |]
-      assertValid byOneAndHalf [aesonLitQQ| 3 |]
-      assertValid byOneAndHalf [aesonLitQQ| 4.5 |]
-      assertInvalid byOneAndHalf [aesonLitQQ| 2.5 |]
-  , testCase "patternProperties" $ do
+  [ testCase "patternProperties" $ do
       let schema = [schemaQQ| {
         "type": "object",
         "properties": {
@@ -104,10 +92,6 @@ examples testCase assertValid' assertInvalid' =
       assertValid everythingExceptNumbers [aesonLitQQ| { "eins": 1, "zwei": 2 } |]
       assertValid everythingExceptNumbers [aesonLitQQ| ["eins", "zwei"] |]
       assertValid everythingExceptNumbers [aesonLitQQ| null |]
-  , testCase "format: \"regex\"" $ do
-      let isRegex = [schemaQQ| { "type": "string", "format": "regex" } |]
-      assertValid isRegex "([abc])+\\s+$"
-      assertInvalid isRegex "^(abc]"
   , testCase "type: subschema" $ do
       let schema = [schemaQQ| {
         "type": [
