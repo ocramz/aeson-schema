@@ -13,7 +13,7 @@ import           Language.Haskell.TH        (ExpQ)
 import           Language.Haskell.TH.Quote  (QuasiQuoter (..))
 import           Language.Haskell.TH.Syntax (lift)
 
-import           Data.Aeson.Schema.CodeGen  ()
+import           Data.Aeson.Schema.CodeGen
 
 aesonLitQQ :: QuasiQuoter
 aesonLitQQ = QuasiQuoter { quoteExp = aesonLit }

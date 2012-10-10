@@ -67,4 +67,6 @@ test-suite tests
                        bytestring,
                        hint,
                        temporary,
-                       mtl
+                       mtl,
+                       filepath,
+                       directory
