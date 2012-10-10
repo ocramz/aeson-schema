@@ -54,6 +54,8 @@ import           Data.Aeson.Schema.Helpers            (formatValidators,
                                                        replaceHiddenModules)
 
 import           Data.Aeson.Schema.Examples           (examples)
+import           TestSuite.Types                      (SchemaTest (..),
+                                                       SchemaTestCase (..))
 
 instance Arbitrary Text where
   arbitrary = pack <$> arbitrary
@@ -219,12 +221,13 @@ carry (ForkLift cmdChan) action = do
   writeChan cmdChan (successHandler, errorHandler)
   takeMVar result
 
-tests :: IO [Test]
-tests = do
+tests :: [SchemaTest] -> IO [Test]
+tests schemaTests = do
   forkLift <- startInterpreterThread
   return
     [ testProperty "generated code typechecks" $ typecheckGenerate forkLift
     , testGroup "examples" $ testExamples forkLift
+    , testGroup "JSON-Schema-Test-Suite" $ map (execSchemaTest forkLift) schemaTests
     , testCase "1-tuple" $ do
         let
           schema = empty
@@ -280,38 +283,54 @@ typecheck code forkLift = withCodeTempFile code $ \path ->
   carry forkLift $ Hint.loadModules [path]
 
 testExamples :: ForkLift -> [Test]
-testExamples forkLift = examples testCase assertValid assertInvalid
+testExamples forkLift = examples testCase (assertValid forkLift) (assertInvalid forkLift)
+
+execSchemaTest :: ForkLift -> SchemaTest -> Test
+execSchemaTest forkLift schemaTest = testGroup testName testCases
   where
-    assertValid = assertValidates True
-    assertInvalid = assertValidates False
-    assertValidates shouldBeValid graph schema value = do
-      let graph' = if M.null graph then M.singleton "a" schema else graph
-      (code, typeMap) <- runQ $ generateModule "TestSchema" graph'
-      valueExpr <- replaceHiddenModules <$> runQ (THS.lift value)
-      let typ = replaceHiddenModules $ typeMap M.! "a"
-      let validatesExpr = unlines
-            [ "case DAT.parseEither parseJSON (" ++ pprint valueExpr ++ ") :: Either String (" ++ pprint typ ++ ") of"
-            , "  Prelude.Left e  -> Just e"
-            , "  Prelude.Right _ -> Nothing"
-            ]
-      result <- withCodeTempFile code $ \path -> carry forkLift $ do
-        Hint.loadModules [path]
-        Hint.setImportsQ $ map (,Nothing) (getUsedModules (valueExpr, typ)) ++
-          [ ("TestSchema", Nothing)
-          , ("Prelude", Nothing)
-          , ("Data.Aeson.Types", Just "DAT")
-          , ("Data.Ratio", Nothing)
-          ]
-        Hint.interpret validatesExpr (Hint.as :: Maybe String)
-      let printInfo = TIO.putStrLn code >> putStrLn validatesExpr
-      case result of
-        Left err -> printInfo >> HU.assertFailure (show err)
-        Right maybeError -> case (shouldBeValid, maybeError) of
-          (True, Nothing) -> return ()
-          (False, Just _) -> return ()
-          (True, Just e)  -> do
-            printInfo
-            HU.assertFailure $ "value should have beean parsed but was rejected with error '" ++ e ++ "'"
-          (False, Nothing) -> do
-            printInfo
-            HU.assertFailure "value should have been rejected"
+    testName = unpack $ schemaTestDescription schemaTest
+    testCases = map execSchemaTestCase $ schemaTestCases schemaTest
+    schema = schemaTestSchema schemaTest
+    execSchemaTestCase schemaTestCase = testCase name assertion
+      where
+        name = unpack $ schemaTestCaseDescription schemaTestCase
+        shouldBeValid = schemaTestCaseValid schemaTestCase
+        testData = schemaTestCaseData schemaTestCase
+        assertion = assertValidates shouldBeValid forkLift M.empty schema testData
+
+assertValid, assertInvalid :: ForkLift -> Graph Schema Text -> Schema Text -> Value -> HU.Assertion
+assertValid = assertValidates True
+assertInvalid = assertValidates False
+
+assertValidates :: Bool -> ForkLift -> Graph Schema Text -> Schema Text -> Value -> HU.Assertion
+assertValidates shouldBeValid forkLift graph schema value = do
+  let graph' = if M.null graph then M.singleton "a" schema else graph
+  (code, typeMap) <- runQ $ generateModule "TestSchema" graph'
+  valueExpr <- replaceHiddenModules <$> runQ (THS.lift value)
+  let typ = replaceHiddenModules $ typeMap M.! "a"
+  let validatesExpr = unlines
+        [ "case DAT.parseEither parseJSON (" ++ pprint valueExpr ++ ") :: Either String (" ++ pprint typ ++ ") of"
+        , "  Prelude.Left e  -> Just e"
+        , "  Prelude.Right _ -> Nothing"
+        ]
+  result <- withCodeTempFile code $ \path -> carry forkLift $ do
+    Hint.loadModules [path]
+    Hint.setImportsQ $ map (,Nothing) (getUsedModules (valueExpr, typ)) ++
+      [ ("TestSchema", Nothing)
+      , ("Prelude", Nothing)
+      , ("Data.Aeson.Types", Just "DAT")
+      , ("Data.Ratio", Nothing)
+      ]
+    Hint.interpret validatesExpr (Hint.as :: Maybe String)
+  let printInfo = TIO.putStrLn code >> putStrLn validatesExpr
+  case result of
+    Left err -> printInfo >> HU.assertFailure (show err)
+    Right maybeError -> case (shouldBeValid, maybeError) of
+      (True, Nothing) -> return ()
+      (False, Just _) -> return ()
+      (True, Just e)  -> do
+        printInfo
+        HU.assertFailure $ "value should have beean parsed but was rejected with error '" ++ e ++ "'"
+      (False, Nothing) -> do
+        printInfo
+        HU.assertFailure "value should have been rejected"

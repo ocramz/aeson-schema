@@ -14,7 +14,8 @@ import           Data.Attoparsec.Lazy  (Result (..), parse)
 import qualified Data.ByteString.Lazy  as LBS
 import           Data.List             (isSuffixOf)
 import           Data.Maybe            (fromMaybe)
-import           Data.Text             (Text)
+import           Data.Monoid           ((<>))
+import           Data.Text             (Text, pack)
 import           System.Directory      (getDirectoryContents)
 import           System.FilePath       ((</>))
 
@@ -53,5 +54,9 @@ readSchemaTests dir = do
     case parse (skipSpace *> json <* skipSpace) jsonBS of
       Done _ value -> case parseEither parseJSON value of
         Left err -> fail $ "couldn't parse file '" ++ fullPath ++ "': " ++ err
-        Right v  -> return v
+        Right v  -> return $ map (prependFileName file) v
       _ -> fail $ "not a valid json file: " ++ fullPath
+  where
+    prependFileName fileName schemaTest = schemaTest
+      { schemaTestDescription = pack fileName <> ": " <> schemaTestDescription schemaTest
+      }
