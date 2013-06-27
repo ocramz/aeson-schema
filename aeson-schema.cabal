@@ -1,5 +1,5 @@
 name:                aeson-schema
-version:             0.2.0.0
+version:             0.2.0.1
 synopsis:            Haskell JSON schema validator and parser generator
 -- description:         
 homepage:            https://github.com/timjb/aeson-schema
@@ -13,7 +13,7 @@ cabal-version:       >=1.8
 
 source-repository head
   type:                git
-  location:            git://github.com/timjb/haskell-aeson-schema.git
+  location:            git://github.com/timjb/aeson-schema.git
 
 library
   ghc-options:         -Wall
@@ -39,7 +39,7 @@ library
                        th-lift >= 0.5.5 && < 0.6,
                        mtl >= 2 && < 3,
                        transformers >= 0.3.0.0,
-                       QuickCheck >= 2.4.2 && < 2.5,
+                       QuickCheck >= 2.4.2 && < 2.7,
                        syb >= 0.3.6.1,
                        bytestring
 
