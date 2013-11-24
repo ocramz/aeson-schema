@@ -9,6 +9,18 @@ You can install this library using cabal:
 
     cabal update && cabal install aeson-schema
 
+## Running the tests
+
+aeson-schema utilizes the cabal sandbox.  To get up and running with the tests you'll need to use these commands:
+
+    cd aeson-schema
+    git submodule init
+    git submodule update
+    cabal sandbox init
+    cabal install
+    cabal install --enable-tests
+    cabal test
+
 ## Compatibility
 
 aeson-schema implements [Draft 3](http://tools.ietf.org/html/draft-zyp-json-schema-03) of the spec. It supports all core schema definitions except the following 'format' values:
