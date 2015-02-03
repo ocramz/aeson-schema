@@ -418,7 +418,7 @@ generateArray name schema = case schemaItems schema of
                -> CodeGenM SchemaTypes (TypeQ, ExpQ, ExpQ)
     tupleArray items additionalItems = return (tupleType, code $ additionalCheckers ++ [noBindS tupleParser], tupleTo)
       where
-        items' = flip map (zip [0..] items) $ \(i, (itemType, itemParser, itemTo)) ->
+        items' = flip map (zip [0::Int ..] items) $ \(i, (itemType, itemParser, itemTo)) ->
           let simpleParser = [| $(itemParser) (V.unsafeIndex $(varE arr) i) |]
           in if i < schemaMinItems schema
              then (itemType, simpleParser, [| return . $itemTo |])
