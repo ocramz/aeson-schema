@@ -65,7 +65,7 @@ newtype CodeGenM s a = CodeGenM
 
 instance Quasi (CodeGenM s) where
   qNewName = state . codeGenNewName
-  qReport b = CodeGenM . MT.lift . report b
+  qReport b = CodeGenM . MT.lift . qReport b
   qRecover (CodeGenM handler) (CodeGenM action) = do
     graph <- ask
     currState <- get

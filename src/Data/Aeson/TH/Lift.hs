@@ -4,8 +4,8 @@
 module Data.Aeson.TH.Lift () where
 
 import           Data.Aeson                 (Value (..))
-import           Data.Attoparsec.Number     (Number (..))
 import qualified Data.HashMap.Lazy          as HM
+import qualified Data.Scientific            as S
 import           Data.Text                  (Text, pack, unpack)
 import qualified Data.Vector                as V
 import           Language.Haskell.TH
@@ -17,15 +17,17 @@ instance Lift Text where
 instance Lift Double where
   lift d = [| fromRational $(litE . rationalL . toRational $ d) :: Double |]
 
-instance Lift Number where
-  lift (I i) = [| I i |]
-  lift (D d) = [| D d |]
-
 instance (Lift k, Lift v) => Lift (HM.HashMap k v) where
   lift hm = [| HM.fromList $(lift (HM.toList hm)) |]
 
 instance (Lift a) => Lift (V.Vector a) where
   lift vec = [| V.fromList $(lift (V.toList vec)) |]
+
+instance Lift S.Scientific where
+  lift s =
+    let c = S.coefficient s
+        e = S.base10Exponent s
+    in [| S.scientific c e |]
 
 instance Lift Value where
   lift (Object o) = [| Object o |]

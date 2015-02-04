@@ -4,14 +4,14 @@ module Data.Aeson.LitQQ
   ( aesonLitQQ
   ) where
 
-import           Control.Applicative        ((*>), (<*))
-import           Data.Aeson.Parser          (value')
-import           Data.Attoparsec.Char8      (skipSpace)
-import           Data.Attoparsec.Lazy       (Result (..), parse)
-import           Data.ByteString.Lazy.Char8 (pack)
-import           Language.Haskell.TH        (ExpQ)
-import           Language.Haskell.TH.Quote  (QuasiQuoter (..))
-import           Language.Haskell.TH.Syntax (lift)
+import           Control.Applicative              ((*>), (<*))
+import           Data.Aeson.Parser                (value')
+import           Data.Attoparsec.ByteString.Char8 (skipSpace)
+import           Data.Attoparsec.Lazy             (Result (..), parse)
+import           Data.ByteString.Lazy.Char8       (pack)
+import           Language.Haskell.TH              (ExpQ)
+import           Language.Haskell.TH.Quote        (QuasiQuoter (..))
+import           Language.Haskell.TH.Syntax       (lift)
 
 import           Data.Aeson.Schema.CodeGen
 

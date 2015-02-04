@@ -17,8 +17,7 @@ import           Test.Framework.Providers.QuickCheck2
 import qualified Test.HUnit                           as HU
 import           Test.QuickCheck                      hiding (Result (..))
 import           Test.QuickCheck.Property             (Result (..), failed,
-                                                       morallyDubiousIOProperty,
-                                                       succeeded)
+                                                       ioProperty, succeeded)
 
 import           Control.Applicative                  (pure, (<$>), (<*>))
 import           Control.Concurrent                   (forkIO)
@@ -29,12 +28,12 @@ import           Control.Concurrent.MVar              (newEmptyMVar, putMVar,
 import           Control.Monad                        (forever, liftM2, (>=>))
 import           Control.Monad.Trans                  (liftIO)
 import           Data.Aeson                           (Value (..))
-import           Data.Attoparsec.Number               (Number (..))
 import           Data.Char                            (isAscii, isPrint)
 import           Data.Hashable                        (Hashable)
 import qualified Data.HashMap.Lazy                    as HM
 import qualified Data.Map                             as M
 import           Data.Maybe                           (isNothing, listToMaybe)
+import           Data.Scientific                      (Scientific)
 import           Data.Text                            (Text, pack, unpack)
 import qualified Data.Text                            as T
 import qualified Data.Text.IO                         as TIO
@@ -63,11 +62,8 @@ instance Arbitrary Text where
 instance (Eq k, Hashable k, Arbitrary k, Arbitrary v) => Arbitrary (HM.HashMap k v) where
   arbitrary = HM.fromList <$> arbitrary
 
-instance Arbitrary Number where
-  arbitrary = oneof
-    [ I <$> arbitrary
-    , D <$> arbitrary
-    ]
+instance Arbitrary Scientific where
+  arbitrary = fromRational <$> arbitrary
 
 instance (Arbitrary a) => Arbitrary (V.Vector a) where
   arbitrary = V.fromList <$> arbitrary
@@ -255,7 +251,7 @@ tests schemaTests = do
     ]
 
 typecheckGenerate :: ForkLift -> Schema Text -> Property
-typecheckGenerate forkLift schema = morallyDubiousIOProperty $ do
+typecheckGenerate forkLift schema = ioProperty $ do
   let graph = M.singleton "A" schema
   (code, _) <- runQ $ generateModule "CustomSchema" graph
   eitherToResult <$> typecheck code forkLift

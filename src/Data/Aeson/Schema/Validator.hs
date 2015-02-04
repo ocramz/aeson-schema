@@ -7,11 +7,11 @@ module Data.Aeson.Schema.Validator
 
 import           Data.Aeson                (Value (..))
 import qualified Data.Aeson                as A
-import           Data.Attoparsec.Number    (Number (..))
 import qualified Data.HashMap.Strict       as H
 import qualified Data.List                 as L
 import qualified Data.Map                  as M
 import           Data.Maybe                (isNothing)
+import           Data.Scientific           (Scientific, isInteger)
 import           Data.Text                 (Text, length, unpack)
 import qualified Data.Vector               as V
 import           Prelude                   hiding (foldr, length)
@@ -52,7 +52,7 @@ validate graph schema val = case schemaDRef schema of
     validateType (Choice1of2 t) = case (t, val) of
       (StringType, String str) -> validateString schema str
       (NumberType, Number num) -> validateNumber schema num
-      (IntegerType, Number num@(I _)) -> validateNumber schema num
+      (IntegerType, Number num) -> validateInteger schema num
       (BooleanType, Bool _) -> valid
       (ObjectType, Object obj) -> validateObject graph schema obj
       (ArrayType, Array arr) -> validateArray graph schema arr
@@ -78,7 +78,7 @@ validate graph schema val = case schemaDRef schema of
 
     isType :: Value -> SchemaType -> Bool
     isType (String _) StringType = True
-    isType (Number (I _)) IntegerType = True
+    isType (Number num) IntegerType = isInteger num
     isType (Number _) NumberType = True
     isType (Bool _) BooleanType = True
     isType (Object _) ObjectType = True
@@ -112,7 +112,7 @@ validateString schema str = L.concat
     checkPattern (Pattern source compiled) = assert (match compiled $ unpack str) $ "string must match pattern " ++ show source
     checkFormat format = maybe valid validationError $ validateFormat format str
 
-validateNumber :: Schema ref -> Number -> [ValidationError]
+validateNumber :: Schema ref -> Scientific -> [ValidationError]
 validateNumber schema num = L.concat
   [ maybeCheck (checkMinimum $ schemaExclusiveMinimum schema) $ schemaMinimum schema
   , maybeCheck (checkMaximum $ schemaExclusiveMaximum schema) $ schemaMaximum schema
@@ -126,6 +126,11 @@ validateNumber schema num = L.concat
       then assert (num < m)  $ "number must be less than " ++ show m
       else assert (num <= m) $ "number must be less than or equal " ++ show m
     checkDivisibleBy devisor = assert (num `isDivisibleBy` devisor) $ "number must be devisible by " ++ show devisor
+
+validateInteger :: Schema ref -> Scientific -> [ValidationError]
+validateInteger schema num =
+  assert (isInteger num) "number must be an integer" ++
+  validateNumber schema num
 
 validateObject :: Ord ref => Graph Schema ref -> Schema ref -> A.Object -> [ValidationError]
 validateObject graph schema obj =

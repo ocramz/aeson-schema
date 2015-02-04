@@ -22,9 +22,8 @@ import           Data.Aeson.Parser          (value')
 import           Data.Aeson.Schema.Choice
 import           Data.Aeson.Types           (Parser, emptyArray, emptyObject,
                                              parseEither)
-import           Data.Attoparsec.Char8      (skipSpace)
+import           Data.Attoparsec.ByteString.Char8 (skipSpace)
 import           Data.Attoparsec.Lazy       (Result (..), parse)
-import           Data.Attoparsec.Number     (Number (..))
 import           Data.ByteString.Lazy.Char8 (pack)
 import           Data.Foldable              (Foldable (..), toList)
 import           Data.Function              (on)
@@ -33,6 +32,7 @@ import           Data.HashMap.Strict        (HashMap)
 import qualified Data.HashMap.Strict        as H
 import qualified Data.Map                   as M
 import           Data.Maybe                 (catMaybes)
+import           Data.Scientific            (Scientific)
 import           Data.Text                  (Text, unpack)
 import           Data.Traversable           (traverse)
 import qualified Data.Vector                as V
@@ -108,8 +108,8 @@ data Schema ref = Schema
   , schemaAdditionalItems      :: Choice2 Bool (Schema ref)                  -- ^ Whether additional items are allowed
   , schemaRequired             :: Bool                                       -- ^ When this schema is used in a property of another schema, this means that the property must have a value and not be undefined
   , schemaDependencies         :: HashMap Text (Choice2 [Text] (Schema ref)) -- ^ Map of dependencies (property a requires properties b and c, property a requires the instance to validate against another schema, etc.)
-  , schemaMinimum              :: Maybe Number                               -- ^ Minimum value when the instance is a number
-  , schemaMaximum              :: Maybe Number                               -- ^ Maximum value when the instance is a number
+  , schemaMinimum              :: Maybe Scientific                           -- ^ Minimum value when the instance is a number
+  , schemaMaximum              :: Maybe Scientific                           -- ^ Maximum value when the instance is a number
   , schemaExclusiveMinimum     :: Bool                                       -- ^ Whether the minimum value is exclusive (only numbers greater than the minimum are allowed)
   , schemaExclusiveMaximum     :: Bool                                       -- ^ Whether the maximum value is exclusive (only numbers less than the maximum are allowed)
   , schemaMinItems             :: Int                                        -- ^ Minimum length for arrays
@@ -124,7 +124,7 @@ data Schema ref = Schema
   , schemaTitle                :: Maybe Text                                 -- ^ Short description of the instance property
   , schemaDescription          :: Maybe Text                                 -- ^ Full description of the purpose of the instance property
   , schemaFormat               :: Maybe Text                                 -- ^ Format of strings, e.g. 'data-time', 'regex' or 'email'
-  , schemaDivisibleBy          :: Maybe Number                               -- ^ When the instance is a number, it must be divisible by this number with no remainder
+  , schemaDivisibleBy          :: Maybe Scientific                           -- ^ When the instance is a number, it must be divisible by this number with no remainder
   , schemaDisallow             :: [Choice2 SchemaType (Schema ref)]          -- ^ List of disallowed types
   , schemaExtends              :: [Schema ref]                               -- ^ Base schema that the current schema inherits from
   , schemaId                   :: Maybe Text                                 -- ^ Identifier of the current schema

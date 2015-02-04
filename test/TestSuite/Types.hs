@@ -4,20 +4,20 @@ module TestSuite.Types
   , readSchemaTests
   ) where
 
-import           Control.Applicative   ((*>), (<$>), (<*), (<*>))
-import           Control.Monad         (forM)
+import           Control.Applicative              ((*>), (<$>), (<*), (<*>))
+import           Control.Monad                    (forM)
 import           Data.Aeson
 import           Data.Aeson.Schema
-import           Data.Aeson.Types      (parseEither)
-import           Data.Attoparsec.Char8 (skipSpace)
-import           Data.Attoparsec.Lazy  (Result (..), parse)
-import qualified Data.ByteString.Lazy  as LBS
-import           Data.List             (isSuffixOf)
-import           Data.Maybe            (fromMaybe)
-import           Data.Monoid           ((<>))
-import           Data.Text             (Text, pack)
-import           System.Directory      (getDirectoryContents)
-import           System.FilePath       ((</>))
+import           Data.Aeson.Types                 (parseEither)
+import           Data.Attoparsec.ByteString.Char8 (skipSpace)
+import           Data.Attoparsec.Lazy             (Result (..), parse)
+import qualified Data.ByteString.Lazy             as LBS
+import           Data.List                        (isSuffixOf)
+import           Data.Maybe                       (fromMaybe)
+import           Data.Monoid                      ((<>))
+import           Data.Text                        (Text, pack)
+import           System.Directory                 (getDirectoryContents)
+import           System.FilePath                  ((</>))
 
 data SchemaTest = SchemaTest
   { schemaTestDescription :: Text

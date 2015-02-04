@@ -19,7 +19,6 @@ import           Control.Monad.RWS.Lazy      (MonadReader (..),
                                               MonadWriter (..), evalRWST)
 import           Data.Aeson
 import           Data.Aeson.Types            (parse)
-import           Data.Attoparsec.Number      (Number (..))
 import           Data.Char                   (isAlphaNum, isLetter, toLower,
                                               toUpper)
 import qualified Data.HashMap.Lazy           as HM
@@ -28,6 +27,8 @@ import           Data.List                   (mapAccumL, sort, unzip5)
 import qualified Data.Map                    as M
 import           Data.Maybe                  (catMaybes, isNothing, maybeToList)
 import           Data.Monoid                 ((<>))
+import           Data.Scientific             (Scientific, floatingOrInteger,
+                                              isInteger)
 import           Data.Text                   (Text, pack, unpack)
 import qualified Data.Text                   as T
 import           Data.Traversable            (forM, traverse)
@@ -167,12 +168,17 @@ generateSchema decName name schema = case schemaDRef schema of
     checkDisallow dis = noBindS $ doE $ map (noBindS . choice2 disallowType disallowSchema) dis
     disallowType StringType  = disallowPattern (conP 'String [wildP]) "strings are disallowed"
     disallowType NumberType  = disallowPattern (conP 'Number [wildP]) "numbers are disallowed"
-    disallowType IntegerType = disallowPattern (conP 'Number [conP 'I [wildP]]) "integers are disallowed"
+    disallowType IntegerType =
+      [| case $(varE val) of
+           Number num | isInteger num -> fail "integers are disallowed"
+           _ -> return ()
+      |]
     disallowType BooleanType = disallowPattern (conP 'Bool [wildP]) "booleans are disallowed"
     disallowType ObjectType  = disallowPattern (conP 'Object [wildP]) "objects are disallowed"
     disallowType ArrayType   = disallowPattern (conP 'Array [wildP]) "arrays are disallowed"
     disallowType NullType    = disallowPattern (conP 'Null []) "null is disallowed"
     disallowType AnyType     = [| fail "Nothing is allowed here. Sorry." |]
+    disallowPattern :: PatQ -> String -> ExpQ
     disallowPattern pat err = caseE (varE val)
       [ match pat (normalB [| fail err |])[]
       , match wildP (normalB [| return () |]) []
@@ -234,7 +240,7 @@ generateString schema = return (conT ''Text, code, [| String |])
                          [| fail "not a string" |]
 
 generateNumber :: Schema Text -> CodeGenM SchemaTypes (TypeQ, ExpQ, ExpQ)
-generateNumber schema = return (conT ''Number, code, [| Number |])
+generateNumber schema = return (conT ''Scientific, code, [| Number |])
   where
     num = mkName "num"
     code = lambdaPattern (conP 'Number [varP num])
@@ -242,11 +248,15 @@ generateNumber schema = return (conT ''Number, code, [| Number |])
                          [| fail "not a number" |]
 
 generateInteger :: Schema Text -> CodeGenM SchemaTypes (TypeQ, ExpQ, ExpQ)
-generateInteger schema = return (conT ''Integer, code, [| Number . I |])
+generateInteger schema = return (conT ''Integer, code, [| Number . fromInteger |])
   where
     num = mkName "num"
-    code = lambdaPattern (conP 'Number [asP num $ conP 'I [varP $ mkName "i"]])
-                         (doE $ numberCheckers num schema ++ [noBindS [| return $(varE $ mkName "i") |]])
+    code = lambdaPattern (conP 'Number [varP num])
+                         [| case floatingOrInteger $(varE num) of
+                              Right i -> $(doE $ numberCheckers num schema ++
+                                                 [noBindS [| return i |]])
+                              _ -> fail "not an integer"
+                         |]
                          [| fail "not an integer" |]
 
 numberCheckers :: Name -> Schema Text -> [StmtQ]
@@ -256,7 +266,7 @@ numberCheckers num schema = catMaybes
   , checkDivisibleBy <$> schemaDivisibleBy schema
   ]
   where
-    checkMinimum, checkMaximum :: Bool -> Number -> StmtQ
+    checkMinimum, checkMaximum :: Bool -> Scientific -> StmtQ
     checkMinimum excl m = if excl
       then assertStmt [| $(varE num) >  m |] $ "number must be greater than " ++ show m
       else assertStmt [| $(varE num) >= m |] $ "number must be greater than or equal " ++ show m
@@ -438,7 +448,7 @@ generateArray name schema = case schemaItems schema of
                    )
             )
         items'' = items' ++ maybeToList maybeAdditionalTypeAndParser
-        (itemTypes, itemParsers, itemTos) = unzip3 items''
+        (_itemTypes, _itemParsers, itemTos) = unzip3 items''
         (tupleType, tupleParser, tupleTo) = case items'' of
           [(itemType, itemParser, itemTo)] -> (itemType, itemParser, [| Array . V.fromList . $itemTo |])
           _ -> let tupleFields = map (mkName . ("f" ++) . show) $ take (length items'') ([1..] :: [Int])

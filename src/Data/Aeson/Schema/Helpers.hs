@@ -9,11 +9,10 @@ module Data.Aeson.Schema.Helpers
   ) where
 
 import           Control.Monad          (join)
-import           Data.Attoparsec.Number (Number (..))
 import           Data.Generics          (Data, everything, everywhere, mkQ, mkT)
 import           Data.List              (nub)
 import           Data.Maybe             (maybeToList)
-import           Data.Ratio             (approxRational, denominator)
+import           Data.Scientific        (Scientific, coefficient, base10Exponent)
 import           Data.Text              (Text, unpack)
 import qualified Data.Vector            as V
 import           Language.Haskell.TH    (Name, Pat (..), mkName, nameBase,
@@ -56,10 +55,19 @@ validateFormat :: Text -- ^ format
 validateFormat format str = ($ str) =<< join (lookup format formatValidators)
 
 -- | Tests whether the first number is divisible by the second with no remainder.
-isDivisibleBy :: Number -> Number -> Bool
-isDivisibleBy (I i) (I j) = i `mod` j == 0
-isDivisibleBy a b = a == 0 || denominator (approxRational (a / b) epsilon) `elem` [-1,1]
-  where epsilon = D $ 10 ** (-10)
+isDivisibleBy :: Scientific -> Scientific -> Bool
+isDivisibleBy a b =
+  let ca = coefficient a
+      ea = base10Exponent a
+      cb = coefficient b
+      eb = base10Exponent b
+  in if ea >= eb
+     then (10 ^ (ea - eb)) * ca `mod` cb == 0
+     else ca `mod` (10 ^ (eb - ea)) == 0
+
+--isDivisibleBy (I i) (I j) = i `mod` j == 0
+--isDivisibleBy a b = a == 0 || denominator (approxRational (a / b) epsilon) `elem` [-1,1]
+  --where epsilon = D $ 10 ** (-10)
 
 -- | Workaround for an issue in Template Haskell: when you quote a name in TH
 -- like 'Text (Data.Text.Text) then TH searches for the module where Text is
