@@ -87,6 +87,7 @@ replaceHiddenModules = everywhere $ mkT replaceModule
       , ("GHC.Types", "Prelude")
       , ("GHC.Real", "Prelude")
       , ("Data.Text.Internal", "Data.Text")
+      , ("Data.Map.Base", "Data.Map")
       ]
     replaceModule :: Name -> Name
     replaceModule n = case nameModule n of

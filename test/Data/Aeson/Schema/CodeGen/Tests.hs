@@ -29,6 +29,7 @@ import           Control.Monad                        (forever, liftM2, (>=>))
 import           Control.Monad.Trans                  (liftIO)
 import           Data.Aeson                           (Value (..))
 import           Data.Char                            (isAscii, isPrint)
+import           Data.Monoid
 import           Data.Hashable                        (Hashable)
 import qualified Data.HashMap.Lazy                    as HM
 import qualified Data.Map                             as M
@@ -39,6 +40,7 @@ import qualified Data.Text                            as T
 import qualified Data.Text.IO                         as TIO
 import qualified Data.Vector                          as V
 import qualified Language.Haskell.Interpreter         as Hint
+import qualified Language.Haskell.Interpreter.Unsafe  as Hint
 import           Language.Haskell.TH                  (runQ)
 import           Language.Haskell.TH.Ppr              (pprint)
 import qualified Language.Haskell.TH.Syntax           as THS
@@ -55,6 +57,8 @@ import           Data.Aeson.Schema.Helpers            (formatValidators,
 import           Data.Aeson.Schema.Examples           (examples)
 import           TestSuite.Types                      (SchemaTest (..),
                                                        SchemaTestCase (..))
+import qualified System.Directory                     as DIR
+import qualified System.FilePath                      as FP
 
 instance Arbitrary Text where
   arbitrary = pack <$> arbitrary
@@ -192,6 +196,26 @@ instance (Eq a) => Arbitrary (Schema a) where
 
 data ForkLift = ForkLift (Chan (Hint.Interpreter (), Hint.InterpreterError -> IO ()))
 
+getSandboxPackageDB :: IO (Maybe FilePath) 
+getSandboxPackageDB = do
+    cwd <- DIR.getCurrentDirectory
+    contents <- readFile $ cwd <> [FP.pathSeparator] <> "cabal.sandbox.config"
+    return $ findPackageDB contents
+    where
+        packagedb = "package-db: "
+        maybePackageDB :: [FilePath] -> Maybe FilePath
+        maybePackageDB list = case list of 
+                                   [path] -> Just $ T.unpack $ T.replace packagedb "" (T.pack path)
+                                   _ -> Nothing
+        findPackageDB contents = maybePackageDB $ filter (\l -> T.isPrefixOf packagedb (T.pack l)) (lines contents)
+
+getInterpreterArgs :: IO [String]
+getInterpreterArgs = do
+    mdb <- getSandboxPackageDB
+    return $ case mdb of
+                Just path -> ["-no-user-package-db", "-package-db " <> path]  
+                Nothing -> []
+
 -- | uses the Forklift pattern (http://apfelmus.nfshost.com/blog/2012/06/07-forklift.html)
 -- to send commands to an interpreter running in a different thread
 startInterpreterThread :: IO ForkLift
@@ -199,12 +223,15 @@ startInterpreterThread = do
   cmdChan <- newChan
   _ <- forkIO $ do
     errorHandler <- newEmptyMVar
+    args <- getInterpreterArgs 
+
     forever $ do
-      Left err <- Hint.runInterpreter $ forever $ do
-        (action, handler) <- liftIO $ readChan cmdChan
-        liftIO $ putMVar errorHandler handler
-        action
-        liftIO $ takeMVar errorHandler
+      Left err <- Hint.unsafeRunInterpreterWithArgs args $ do
+        forever $ do
+            (action, handler) <- liftIO $ readChan cmdChan
+            liftIO $ putMVar errorHandler handler
+            action
+            liftIO $ takeMVar errorHandler
       handler <- takeMVar errorHandler
       handler err
   return $ ForkLift cmdChan
