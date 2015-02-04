@@ -4,6 +4,6 @@ ghc:
 before_install:
   - "sudo apt-get install libpcre3 libpcre3-dev"
   # register library as a package (needs to be fully installed on the system before the tests are run)
-  - "cabal install --force-reinstalls --enable-tests
+  - "cabal install --force-reinstalls --enable-tests"
 after_script:
   - "cat dist/test/aeson-schema-*-tests.log"
