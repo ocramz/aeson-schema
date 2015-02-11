@@ -1,4 +1,4 @@
-# aeson-schema [![Build Status](https://secure.travis-ci.org/timjb/aeson-schema.png)](http://travis-ci.org/timjb/aeson-schema)
+# aeson-schema [![Build Status](https://img.shields.io/travis/timjb/aeson-schema.svg?style=flat)](http://travis-ci.org/timjb/aeson-schema) [![Hackage version](https://img.shields.io/hackage/v/aeson-schema.svg?style=flat)](http://hackage.haskell.org/package/aeson-schema) [![Hackage dependencies](https://img.shields.io/hackage-deps/v/aeson-schema.svg?style=flat)](http://packdeps.haskellers.com/feed?needle=aeson-schema)
 
 aeson-schema is an implementation of the [JSON Schema specification](http://json-schema.org). It can be used in two ways:
 
