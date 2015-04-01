@@ -288,7 +288,7 @@ generateNull = return (tupleT 0, code, [| const Null |])
 cleanName :: String -> String
 cleanName str = charFirst
   where
-    isAllowed c = isAlphaNum c || c `elem` "'_"
+    isAllowed c = isAlphaNum c || c `elem` ("'_"::String)
     cleaned = filter isAllowed str
     charFirst = case cleaned of
       (chr:_) | not (isLetter chr || chr == '_') -> '_':cleaned
