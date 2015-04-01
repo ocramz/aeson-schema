@@ -16,6 +16,7 @@ import           Data.List                        (isSuffixOf)
 import           Data.Maybe                       (fromMaybe)
 import           Data.Monoid                      ((<>))
 import           Data.Text                        (Text, pack)
+import           Paths_aeson_schema               (getDataFileName)
 import           System.Directory                 (getDirectoryContents)
 import           System.FilePath                  ((</>))
 
@@ -45,7 +46,8 @@ instance FromJSON SchemaTestCase where
 
 -- | Read tests collected by Julian Berman (https://github.com/Julian/JSON-Schema-Test-Suite)
 readSchemaTests :: FilePath -> IO [SchemaTest]
-readSchemaTests dir = do
+readSchemaTests dir' = do
+  dir <- getDataFileName dir'
   contents <- getDirectoryContents dir
   let jsonFiles = filter (".json" `isSuffixOf`) contents
   fmap concat $ forM jsonFiles $ \file -> do
