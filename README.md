@@ -39,3 +39,7 @@ aeson-schema implements [Draft 3](http://tools.ietf.org/html/draft-zyp-json-sche
 * host-name
 
 I would be happy to accept pull requests that implement validation of one of these formats, fix bugs or add other features.
+
+## Other libraries
+
+The [hjsonschema](https://github.com/seagreen/hjsonschema) library is more actively maintained and implements the newer JSON Schema v4. It doesn't do code generation, however.
