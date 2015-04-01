@@ -1,5 +1,5 @@
 name:                aeson-schema
-version:             0.3.0.0
+version:             0.3.0.1
 synopsis:            Haskell JSON schema validator and parser generator
 -- description:         
 homepage:            https://github.com/timjb/aeson-schema
