@@ -15,6 +15,8 @@ import           Data.Text                      (Text)
 import           Data.Aeson.Schema
 import           Data.Aeson.Schema.Choice
 
+import           Paths_aeson_schema             (getDataFileName)
+
 data TestFunctor a = TestFunctor Int a
 
 instance Functor TestFunctor where
@@ -23,7 +25,8 @@ instance Functor TestFunctor where
 tests :: [Test]
 tests =
   [ testCase "parse schema.json" $ do
-      schemaBS <- L.readFile "examples/schema.json"
+      schemaJson <- getDataFileName "examples/schema.json"
+      schemaBS <- L.readFile schemaJson
       case decode schemaBS :: Maybe Value of
         Nothing -> HU.assertFailure "JSON syntax error"
         Just val -> case fromJSON val :: Result (Schema Text) of
