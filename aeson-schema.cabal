@@ -12,6 +12,7 @@ build-type:          Simple
 cabal-version:       >=1.8
 data-files:          test/test-suite/tests/draft3/optional/*.json,
                      test/test-suite/tests/draft3/*.json
+                     examples/schema.json
 
 source-repository head
   type:                git
