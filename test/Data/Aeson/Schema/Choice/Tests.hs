@@ -49,9 +49,10 @@ tests =
       return $ length (nub xs) == 3
   , testCase "choice3" $ do
       let rnd = round :: Double -> Int
-      (3 :: Int) HU.@=? choice3 length id rnd (Choice1of3 ("abc" :: String))
-      (4 :: Int) HU.@=? choice3 length id rnd (Choice2of3 4)
-      (5 :: Int) HU.@=? choice3 length id rnd (Choice3of3 (4.6 :: Double))
+          len = length :: [a] -> Int
+      (3 :: Int) HU.@=? choice3 len id rnd (Choice1of3 ("abc" :: String))
+      (4 :: Int) HU.@=? choice3 len id rnd (Choice2of3 4)
+      (5 :: Int) HU.@=? choice3 len id rnd (Choice3of3 (4.6 :: Double))
   , testCase "mapChoice3" $ do
       let plus1 = (+1) :: Int -> Int
       Choice1of3 "LOREM" HU.@=? mapChoice3 (map toUpper) plus1 not (Choice1of3 "lorem")
