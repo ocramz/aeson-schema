@@ -1,7 +1,7 @@
 name:                aeson-schema
 version:             0.3.0.3
 synopsis:            Haskell JSON schema validator and parser generator
--- description:         
+description:         This library provides validation of JSON values against schemata. Given a schema, it can also produce data types corresponding to the schema and a parser.
 homepage:            https://github.com/timjb/aeson-schema
 license:             MIT
 license-file:        LICENSE
