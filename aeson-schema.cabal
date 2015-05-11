@@ -1,5 +1,5 @@
 name:                aeson-schema
-version:             0.3.0.4
+version:             0.3.0.5
 synopsis:            Haskell JSON schema validator and parser generator
 description:         This library provides validation of JSON values against schemata. Given a schema, it can also produce data types corresponding to the schema and a parser.
 homepage:            https://github.com/timjb/aeson-schema
@@ -38,7 +38,7 @@ library
                        regex-pcre >= 0.94.4 && < 0.95,
                        unordered-containers >= 0.2.5.1 && < 2.6,
                        containers >= 0.5.0.0 && < 0.6,
-                       attoparsec >= 0.12.1.2 && < 0.13,
+                       attoparsec >= 0.12.1.2 && < 0.14,
                        template-haskell,
                        th-lift >= 0.7 && < 0.8,
                        mtl >= 2 && < 3,

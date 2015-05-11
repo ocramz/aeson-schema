@@ -1,3 +1,7 @@
+# 0.3.0.5 - 2015-05-11
+
+- Bump upper bound of attoparsec
+
 # 0.3.0.4 - 2015-04-30
 
 - Fix compilation of tests with GHC 7.10
