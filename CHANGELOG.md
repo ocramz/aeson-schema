@@ -1,3 +1,7 @@
+# 0.3.0.6 - 2015-05-31
+
+- Bump upper bounds: Allow aeson-0.9 and syb-0.5
+
 # 0.3.0.5 - 2015-05-11
 
 - Bump upper bound of attoparsec
