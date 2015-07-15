@@ -1,3 +1,7 @@
+# 0.3.0.7 - 2015-07-15
+
+- Bump upper bounds: Allow vector-0.11
+
 # 0.3.0.6 - 2015-05-31
 
 - Bump upper bounds: Allow aeson-0.9 and syb-0.5
