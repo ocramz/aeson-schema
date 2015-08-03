@@ -1,6 +1,7 @@
 {-# LANGUAGE DeriveDataTypeable         #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE TupleSections #-}
+{-# LANGUAGE TemplateHaskell #-}
 
 module Data.Aeson.Schema.CodeGenM
   ( Declaration (..)
@@ -9,6 +10,11 @@ module Data.Aeson.Schema.CodeGenM
   , renderDeclaration
   , codeGenNewName
   , genRecord
+  -- * Customising the codegen
+  , Options(..)
+  , defaultOptions
+  , askOpts
+  , askEnv
   ) where
 
 import           Control.Applicative        (Applicative (..), (<$>))
@@ -60,8 +66,31 @@ codeGenNewName s used = (Name (mkOccName free) NameS, HS.insert free used)
 -- has a readonly map from schema identifiers to the names of the corresponding
 -- types in the generated code.
 newtype CodeGenM s a = CodeGenM
-  { unCodeGenM :: RWST s Code StringSet Q a
-  } deriving (Monad, Applicative, Functor, MonadReader s, MonadWriter Code, MonadState StringSet)
+  { unCodeGenM :: RWST (Options, s) Code StringSet Q a
+  } deriving (Monad, Applicative, Functor, MonadReader (Options, s), MonadWriter Code, MonadState StringSet)
+
+-- | Extra options used for the codegen
+data Options = Options
+ { _extraModules :: [String]
+  -- ^ Needed modules that are not found by "getUsedModules".
+ , _derivingTypeclasses :: [Name]
+ }
+
+defaultOptions :: Options
+defaultOptions = Options
+  { _extraModules = [ "Text.Regex" -- provides RegexMaker instances
+                    , "Text.Regex.PCRE.String" -- provides RegexLike instances, Regex type
+                    , "Data.Aeson.Types" -- Parser type
+                    , "Data.Ratio"
+                    ]
+  , _derivingTypeclasses = [''Eq, ''Show]
+  }
+
+askOpts :: CodeGenM s Options
+askOpts = fst <$> ask
+
+askEnv :: CodeGenM s s
+askEnv = snd <$> ask
 
 instance Quasi (CodeGenM s) where
   qNewName = state . codeGenNewName

@@ -15,7 +15,7 @@ import           Control.Applicative         (Applicative (..), (<$>), (<*>),
                                               (<|>))
 import           Control.Arrow               (first, second)
 import           Control.Monad               (forM_, unless, when, zipWithM)
-import           Control.Monad.RWS.Lazy      (MonadReader (..), 
+import           Control.Monad.RWS.Lazy      (MonadReader (..),
                                               MonadWriter (..), evalRWST)
 import           Data.Aeson
 import           Data.Aeson.Types            (parse)
@@ -51,35 +51,28 @@ type SchemaTypes = M.Map Text Name
 instance (Lift k, Lift v) => Lift (M.Map k v) where
   lift m = [| M.fromList $(lift $ M.toList m) |]
 
--- | Needed modules that are not found by "getUsedModules".
-extraModules :: [String]
-extraModules =
-  [ "Text.Regex" -- provides RegexMaker instances
-  , "Text.Regex.PCRE.String" -- provides RegexLike instances, Regex type
-  , "Data.Aeson.Types" -- Parser type
-  , "Data.Ratio"
-  ]
-
 -- | Extracts all TH declarations
 getDecs :: Code -> [Dec]
 getDecs code = [ dec | Declaration dec _ <- code ]
 
 -- | Generate data-types and FromJSON instances for all schemas
 generateTH :: Graph Schema Text -- ^ Set of schemas
+           -> Options
            -> Q ([Dec], M.Map Text Name) -- ^ Generated code and mapping from schema identifiers to type names
-generateTH = fmap (first getDecs) . generate
+generateTH g = fmap (first getDecs) . generate g
 
 -- | Generated a self-contained module that parses and validates values of
 -- a set of given schemas.
 generateModule :: Text -- ^ Name of the generated module
                -> Graph Schema Text -- ^ Set of schemas
+               -> Options
                -> Q (Text, M.Map Text Name) -- ^ Module code and mapping from schema identifiers to type names
-generateModule modName = fmap (first $ renderCode . map rewrite) . generate
+generateModule modName g opts = fmap (first $ renderCode . map rewrite) $ generate g opts
   where
     renderCode :: Code -> Text
     renderCode code = T.intercalate "\n\n" $ [modDec, T.intercalate "\n" imprts] ++ map renderDeclaration code
       where
-        mods = sort $ extraModules ++ getUsedModules (getDecs code)
+        mods = sort $ _extraModules opts ++ getUsedModules (getDecs code)
         imprts = map (\m -> "import " <> pack m) mods
         modDec = "module " <> modName <> " where"
     rewrite :: Declaration -> Declaration
@@ -87,15 +80,15 @@ generateModule modName = fmap (first $ renderCode . map rewrite) . generate
     rewrite a = a
 
 -- | Generate a generalized representation of the code in a Haskell module
-generate :: Graph Schema Text -> Q (Code, M.Map Text Name)
-generate graph = swap <$> evalRWST (unCodeGenM $ generateTopLevel graph >> return typeMap) typeMap used
+generate :: Graph Schema Text -> Options -> Q (Code, M.Map Text Name)
+generate graph opts = swap <$> evalRWST (unCodeGenM $ generateTopLevel graph >> return typeMap) (opts, typeMap) used
   where
     (used, typeMap) = second M.fromList $ mapAccumL nameAccum HS.empty (M.keys graph)
     nameAccum usedNames schemaName = second (schemaName,) $ swap $ codeGenNewName (firstUpper $ unpack schemaName) usedNames
 
 generateTopLevel :: Graph Schema Text -> CodeGenM SchemaTypes ()
 generateTopLevel graph = do
-  typeMap <- ask
+  (opts, typeMap) <- ask
   graphN <- qNewName "graph"
   when (nameBase graphN /= "graph") $ fail "name graph is already taken"
   graphDecType <- runQ $ sigD graphN [t| Graph Schema Text |]
@@ -106,7 +99,7 @@ generateTopLevel graph = do
     ((typeQ, fromJsonQ, toJsonQ), defNewtype) <- generateSchema (Just typeName) name schema
     when defNewtype $ do
       let newtypeCon = normalC typeName [strictType notStrict typeQ]
-      newtypeDec <- runQ $ newtypeD (cxt []) typeName [] newtypeCon derivingTypeclasses
+      newtypeDec <- runQ $ newtypeD (cxt []) typeName [] newtypeCon (_derivingTypeclasses opts)
       fromJSONInst <- runQ $ instanceD (cxt []) (conT ''FromJSON `appT` conT typeName)
         [ valD (varP $ mkName "parseJSON") (normalB [| fmap $(conE typeName) . $fromJsonQ |]) []
         ]
@@ -126,7 +119,7 @@ generateSchema :: Maybe Name -- ^ Name to be used by type declarations
                -> Schema Text
                -> CodeGenM SchemaTypes ((TypeQ, ExpQ, ExpQ), Bool) -- ^ ((type of the generated representation (a), function :: Value -> Parser a), whether a newtype wrapper is necessary)
 generateSchema decName name schema = case schemaDRef schema of
-  Just ref -> ask >>= \typesMap -> case M.lookup ref typesMap of
+  Just ref -> askEnv >>= \typesMap -> case M.lookup ref typesMap of
     Nothing -> fail "couldn't find referenced schema"
     Just referencedSchema -> return ((conT referencedSchema, [| parseJSON |], [| toJSON |]), True)
   Nothing -> first (\(typ,from,to) -> (typ,wrap from,to)) <$> case schemaType schema of
@@ -197,9 +190,6 @@ generateSchema decName name schema = case schemaDRef schema of
     wrap parser = if null checkers
       then parser
       else lamE [varP val] $ doE $ checkers ++ [noBindS $ parser `appE` varE val]
-
-derivingTypeclasses :: [Name]
-derivingTypeclasses = [''Eq, ''Show]
 
 assertStmt :: ExpQ -> String -> StmtQ
 assertStmt expr err = noBindS [| unless $(expr) (fail err) |]
@@ -357,11 +347,12 @@ generateObject decName name schema = case (propertiesList, schemaAdditionalPrope
                  , Nothing
                  )
       conName <- maybe (qNewName $ firstUpper $ unpack name) return decName
+      tcs <- _derivingTypeclasses <$> askOpts
       recordDeclaration <- runQ $ genRecord conName
                                             (zip3 propertyNames
                                                   (map (fmap replaceHiddenModules) propertyTypes)
                                                   (map (schemaDescription . snd) propertiesList))
-                                            derivingTypeclasses
+                                            tcs
       let typ = conT conName
       let parser = foldl (\oparser propertyParser -> [| $oparser <*> $propertyParser |]) [| pure $(conE conName) |] propertyParsers
       fromJSONInst <- runQ $ instanceD (cxt []) (conT ''FromJSON `appT` typ)
