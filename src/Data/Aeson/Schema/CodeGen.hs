@@ -76,7 +76,7 @@ generateModule modName g opts = fmap (first $ renderCode . map rewrite) $ genera
         imprts = map (\m -> "import " <> pack m) mods
         modDec = "module " <> modName <> " where"
     rewrite :: Declaration -> Declaration
-    rewrite (Declaration dec text) = Declaration (replaceHiddenModules $ cleanPatterns dec) text
+    rewrite (Declaration dec text) = Declaration (replaceHiddenModules (cleanPatterns dec) (_replaceModules opts)) text
     rewrite a = a
 
 -- | Generate a generalized representation of the code in a Haskell module
@@ -348,9 +348,10 @@ generateObject decName name schema = case (propertiesList, schemaAdditionalPrope
                  )
       conName <- maybe (qNewName $ firstUpper $ unpack name) return decName
       tcs <- _derivingTypeclasses <$> askOpts
+      rMods <- _replaceModules <$> askOpts
       recordDeclaration <- runQ $ genRecord conName
                                             (zip3 propertyNames
-                                                  (map (fmap replaceHiddenModules) propertyTypes)
+                                                  (map (fmap (`replaceHiddenModules` rMods)) propertyTypes)
                                                   (map (schemaDescription . snd) propertiesList))
                                             tcs
       let typ = conT conName

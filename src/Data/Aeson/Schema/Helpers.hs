@@ -11,6 +11,7 @@ module Data.Aeson.Schema.Helpers
 import           Control.Monad          (join)
 import           Data.Generics          (Data, everything, everywhere, mkQ, mkT)
 import           Data.List              (nub)
+import qualified Data.Map               as M
 import           Data.Maybe             (maybeToList)
 import           Data.Scientific        (Scientific, coefficient, base10Exponent)
 import           Data.Text              (Text, unpack)
@@ -76,29 +77,17 @@ isDivisibleBy a b =
 -- some code in a module but not when we use the TH code for pretty-printing.
 replaceHiddenModules :: Data a
                      => a -- ^ Dec or Exp
+                     -> M.Map String String
+                     -- ^ Extra replacements, supplied by 'CodeGenM'
                      -> a
-replaceHiddenModules = everywhere $ mkT replaceModule
+replaceHiddenModules d replaceMap = everywhere (mkT replaceModule) d
   where
-    replacements =
-      [ ("Data.HashMap.Base", "Data.HashMap.Lazy")
-      , ("Data.Aeson.Types.Class", "Data.Aeson")
-      , ("Data.Aeson.Types.Internal", "Data.Aeson.Types")
-      , ("GHC.Integer.Type", "Prelude") -- "Could not find module `GHC.Integer.Type'; it is a hidden module in the package `integer-gmp'"
-      , ("GHC.Types", "Prelude")
-      , ("GHC.Real", "Prelude")
-      , ("Data.Text.Internal", "Data.Text")
-      , ("Data.Map.Base", "Data.Map")
-        -- Due to mistake in base 4.8.{0,1} releases
-      , ("Data.OldList", "Prelude")
-      , ("Data.Typeable.Internal", "Data.Typeable")
-      ,
-      ]
     replaceModule :: Name -> Name
     replaceModule n = case nameModule n of
       Just "Data.Aeson.Types.Internal" | nameBase n `elem` ["I", "D"] ->
         mkName $ "Data.Attoparsec.Number." ++ nameBase n
       Just "GHC.Tuple" -> mkName $ nameBase n
-      Just m -> case lookup m replacements of
+      Just m -> case M.lookup m replaceMap of
         Just r -> mkName $ r ++ ('.' : nameBase n)
         Nothing -> n
       _ -> n

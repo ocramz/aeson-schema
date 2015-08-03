@@ -25,6 +25,7 @@ import qualified Control.Monad.Trans.Class  as MT
 import           Data.Data                  (Data, Typeable)
 import           Data.Function              (on)
 import qualified Data.HashSet               as HS
+import qualified Data.Map                   as M
 import           Data.Monoid                ((<>), mconcat)
 import           Data.Text                  (Text, pack)
 import qualified Data.Text                  as T
@@ -74,6 +75,12 @@ data Options = Options
  { _extraModules :: [String]
   -- ^ Needed modules that are not found by "getUsedModules".
  , _derivingTypeclasses :: [Name]
+  -- ^ Classes to put in the @deriving@ clause
+ , _replaceModules :: M.Map String String
+  -- ^ A 'M.Map' of modules which we should replace with other ones
+  -- when references to them are found. Useful for example when the
+  -- codegen is hitting a hidden module that's not already gotten rid
+  -- of in 'Data.Aeson.Schema.Helpers.replaceHiddenModules'.
  }
 
 defaultOptions :: Options
@@ -84,6 +91,21 @@ defaultOptions = Options
                     , "Data.Ratio"
                     ]
   , _derivingTypeclasses = [''Eq, ''Show]
+  , _replaceModules = M.fromList
+       [ ("Data.HashMap.Base", "Data.HashMap.Lazy")
+       , ("Data.Aeson.Types.Class", "Data.Aeson")
+       , ("Data.Aeson.Types.Internal", "Data.Aeson.Types")
+         -- "Could not find module `GHC.Integer.Type'; it is a hidden
+         -- module in the package `integer-gmp'"
+       , ("GHC.Integer.Type", "Prelude")
+       , ("GHC.Types", "Prelude")
+       , ("GHC.Real", "Prelude")
+       , ("Data.Text.Internal", "Data.Text")
+       , ("Data.Map.Base", "Data.Map")
+         -- Due to mistake in base 4.8.{0,1} releases
+       , ("Data.OldList", "Prelude")
+       , ("Data.Typeable.Internal", "Data.Typeable")
+       ]
   }
 
 askOpts :: CodeGenM s Options
