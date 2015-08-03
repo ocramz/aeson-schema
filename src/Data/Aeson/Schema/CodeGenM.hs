@@ -81,6 +81,16 @@ data Options = Options
   -- when references to them are found. Useful for example when the
   -- codegen is hitting a hidden module that's not already gotten rid
   -- of in 'Data.Aeson.Schema.Helpers.replaceHiddenModules'.
+ , _languageExtensions :: [Text]
+  -- ^ List of @LANGUAGE@ extensions to enable in the module. Note that
+  -- these aren't checked for validity.
+  --
+  -- @'_languageExtensions' = [ "LambdaCase" ]@
+ , _ghcOptsPragmas :: [Text]
+  -- ^ List of @OPTIONS_GHC@ to turn on in the module. Note that these
+  -- aren't checked for validity.
+  --
+  -- @'_ghcOptsPragmas' = [ "-fno-warn-name-shadowing" ]@
  }
 
 defaultOptions :: Options
@@ -106,6 +116,8 @@ defaultOptions = Options
        , ("Data.OldList", "Prelude")
        , ("Data.Typeable.Internal", "Data.Typeable")
        ]
+  , _languageExtensions = []
+  , _ghcOptsPragmas = []
   }
 
 askOpts :: CodeGenM s Options

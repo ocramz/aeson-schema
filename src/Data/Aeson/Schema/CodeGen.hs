@@ -70,11 +70,15 @@ generateModule :: Text -- ^ Name of the generated module
 generateModule modName g opts = fmap (first $ renderCode . map rewrite) $ generate g opts
   where
     renderCode :: Code -> Text
-    renderCode code = T.intercalate "\n\n" $ [modDec, T.intercalate "\n" imprts] ++ map renderDeclaration code
+    renderCode code = T.intercalate "\n\n" $ [langExts <> ghcOpts, modDec, T.intercalate "\n" imprts] ++ map renderDeclaration code
       where
         mods = sort $ _extraModules opts ++ getUsedModules (getDecs code)
         imprts = map (\m -> "import " <> pack m) mods
         modDec = "module " <> modName <> " where"
+        -- TH has no support for file-header pragmas so we splice the text in here
+        mkHeaderPragmas t = T.intercalate "\n" . map (\s -> T.unwords ["{-#", t, s, "#-}"])
+        langExts = mkHeaderPragmas "LANGUAGE" $ _languageExtensions opts
+        ghcOpts = mkHeaderPragmas "OPTIONS_GHC" $ _ghcOptsPragmas opts
     rewrite :: Declaration -> Declaration
     rewrite (Declaration dec text) = Declaration (replaceHiddenModules (cleanPatterns dec) (_replaceModules opts)) text
     rewrite a = a
