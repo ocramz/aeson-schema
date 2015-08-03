@@ -1,2 +1,2 @@
-:set -XQuasiQuotes
-:m +Data.Aeson Data.Aeson.Schema
+:set -isrc -idist/build -idist/build/autogen -optP-include -optPdist/build/autogen/cabal_macros.h -itest
+:set -XOverloadedStrings -XQuasiQuotes
