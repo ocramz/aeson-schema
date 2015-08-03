@@ -353,7 +353,7 @@ generateObject decName name schema = case (propertiesList, schemaAdditionalPrope
                                             (zip3 propertyNames
                                                   (map (fmap (`replaceHiddenModules` rMods)) propertyTypes)
                                                   (map (schemaDescription . snd) propertiesList))
-                                            tcs
+                                            (map (`replaceHiddenModules` rMods) tcs)
       let typ = conT conName
       let parser = foldl (\oparser propertyParser -> [| $oparser <*> $propertyParser |]) [| pure $(conE conName) |] propertyParsers
       fromJSONInst <- runQ $ instanceD (cxt []) (conT ''FromJSON `appT` typ)
