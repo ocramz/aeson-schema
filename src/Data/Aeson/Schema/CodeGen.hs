@@ -199,7 +199,7 @@ assertStmt :: ExpQ -> String -> StmtQ
 assertStmt expr err = noBindS [| unless $(expr) (fail err) |]
 
 assertValidates :: ExpQ -> ExpQ -> StmtQ
-assertValidates schema value = noBindS
+assertValidates schema value = noBindS $ ParensE <$>
   [| case validate $(varE $ mkName "graph") $schema $value of
        [] -> return ()
        es -> fail $ unlines es
