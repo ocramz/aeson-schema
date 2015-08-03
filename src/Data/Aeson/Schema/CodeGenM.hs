@@ -73,7 +73,7 @@ newtype CodeGenM s a = CodeGenM
 -- | Extra options used for the codegen
 data Options = Options
  { _extraModules :: [String]
-  -- ^ Needed modules that are not found by "getUsedModules".
+  -- ^ Needed modules that are not found by 'getUsedModules'.
  , _derivingTypeclasses :: [Name]
   -- ^ Classes to put in the @deriving@ clause
  , _replaceModules :: M.Map String String
