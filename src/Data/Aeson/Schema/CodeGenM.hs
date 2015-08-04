@@ -127,6 +127,7 @@ defaultOptions = Options
          -- Due to mistake in base 4.8.{0,1} releases
        , ("Data.OldList", "Prelude")
        , ("Data.Typeable.Internal", "Data.Typeable")
+       , ("Data.Binary.Class", "Data.Binary")
        ]
   , _languageExtensions = []
   , _ghcOptsPragmas = []
