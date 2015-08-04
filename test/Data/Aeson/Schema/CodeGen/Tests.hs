@@ -50,6 +50,7 @@ import           System.IO.Temp                       (withSystemTempFile)
 import           Data.Aeson.Schema
 import           Data.Aeson.Schema.Choice
 import           Data.Aeson.Schema.CodeGen            (generateModule)
+import           Data.Aeson.Schema.CodeGenM           (Options(..), defaultOptions)
 import           Data.Aeson.Schema.Helpers            (formatValidators,
                                                        getUsedModules,
                                                        replaceHiddenModules)
@@ -196,7 +197,7 @@ instance (Eq a) => Arbitrary (Schema a) where
 
 data ForkLift = ForkLift (Chan (Hint.Interpreter (), Hint.InterpreterError -> IO ()))
 
-getSandboxPackageDB :: IO (Maybe FilePath) 
+getSandboxPackageDB :: IO (Maybe FilePath)
 getSandboxPackageDB = do
     cwd <- DIR.getCurrentDirectory
     contents <- readFile $ cwd <> [FP.pathSeparator] <> "cabal.sandbox.config"
@@ -204,7 +205,7 @@ getSandboxPackageDB = do
     where
         packagedb = "package-db: "
         maybePackageDB :: [FilePath] -> Maybe FilePath
-        maybePackageDB list = case list of 
+        maybePackageDB list = case list of
                                    [path] -> Just $ T.unpack $ T.replace packagedb "" (T.pack path)
                                    _ -> Nothing
         findPackageDB contents = maybePackageDB $ filter (\l -> T.isPrefixOf packagedb (T.pack l)) (lines contents)
@@ -213,7 +214,7 @@ getInterpreterArgs :: IO [String]
 getInterpreterArgs = do
     mdb <- getSandboxPackageDB
     return $ case mdb of
-                Just path -> ["-no-user-package-db", "-package-db " <> path]  
+                Just path -> ["-no-user-package-db", "-package-db " <> path]
                 Nothing -> []
 
 -- | uses the Forklift pattern (http://apfelmus.nfshost.com/blog/2012/06/07-forklift.html)
@@ -223,7 +224,7 @@ startInterpreterThread = do
   cmdChan <- newChan
   _ <- forkIO $ do
     errorHandler <- newEmptyMVar
-    args <- getInterpreterArgs 
+    args <- getInterpreterArgs
 
     forever $ do
       Left err <- Hint.unsafeRunInterpreterWithArgs args $ do
@@ -258,7 +259,7 @@ tests schemaTests = do
             , schemaItems = Just $ Choice2of2 [empty { schemaType = [Choice1of2 NumberType] }]
             }
           graph = M.singleton "A" schema
-        (code, _) <- runQ $ generateModule "TestOneTuple" graph
+        (code, _) <- runQ $ generateModule "TestOneTuple" graph defaultOptions
         result <- typecheck code forkLift
         case result of
           Left err -> HU.assertFailure $ show err
@@ -270,7 +271,7 @@ tests schemaTests = do
               "additionalProperties": { "type": "number" }
             } |]
           graph = M.singleton "A" schema
-        (code, _) <- runQ $ generateModule "SimpleMap" graph
+        (code, _) <- runQ $ generateModule "SimpleMap" graph defaultOptions
         result <- typecheck code forkLift
         case result of
           Left err -> HU.assertFailure $ show err
@@ -280,7 +281,7 @@ tests schemaTests = do
 typecheckGenerate :: ForkLift -> Schema Text -> Property
 typecheckGenerate forkLift schema = ioProperty $ do
   let graph = M.singleton "A" schema
-  (code, _) <- runQ $ generateModule "CustomSchema" graph
+  (code, _) <- runQ $ generateModule "CustomSchema" graph defaultOptions
   eitherToResult <$> typecheck code forkLift
 
 withCodeTempFile :: Text -> (FilePath -> IO a) -> IO a
@@ -328,9 +329,10 @@ assertInvalid = assertValidates False
 assertValidates :: Bool -> ForkLift -> Graph Schema Text -> Schema Text -> Value -> HU.Assertion
 assertValidates shouldBeValid forkLift graph schema value = do
   let graph' = if M.null graph then M.singleton "a" schema else graph
-  (code, typeMap) <- runQ $ generateModule "TestSchema" graph'
-  valueExpr <- replaceHiddenModules <$> runQ (THS.lift value)
-  let typ = replaceHiddenModules $ typeMap M.! "a"
+      repMap = _replaceModules defaultOptions
+  (code, typeMap) <- runQ $ generateModule "TestSchema" graph' defaultOptions
+  valueExpr <- flip replaceHiddenModules repMap <$> runQ (THS.lift value)
+  let typ = flip replaceHiddenModules repMap $ typeMap M.! "a"
   let validatesExpr = unlines
         [ "case DAT.parseEither parseJSON (" ++ pprint valueExpr ++ ") :: Either String (" ++ pprint typ ++ ") of"
         , "  Prelude.Left e  -> Just e"
