@@ -353,6 +353,7 @@ generateObject decName name schema = case (propertiesList, schemaAdditionalPrope
       conName <- maybe (qNewName $ firstUpper $ unpack name) return decName
       tcs <- _derivingTypeclasses <$> askOpts
       rMods <- _replaceModules <$> askOpts
+      userInstanceGen <- _extraInstances <$> askOpts
       recordDeclaration <- runQ $ genRecord conName
                                             (zip3 propertyNames
                                                   (map (fmap (`replaceHiddenModules` rMods)) propertyTypes)
@@ -367,14 +368,17 @@ generateObject decName name schema = case (propertiesList, schemaAdditionalPrope
             ]
         ]
       let paramNames = map (mkName . ("a" ++) . show) $ take (length propertyTos) ([1..] :: [Int])
+
+      userInstances <- runQ . sequence $ userInstanceGen conName
       toJSONInst <- runQ $ instanceD (cxt []) (conT ''ToJSON `appT` typ)
         [ funD (mkName "toJSON") -- cannot use a qualified name here
           [ clause [conP conName $ map varP paramNames] (normalB [| Object $ HM.fromList $ catMaybes $(listE $ zipWith3 (\fieldName to param -> [| (,) $(lift fieldName) <$> $to $(varE param) |]) (map fst propertiesList) propertyTos paramNames) |]) []
           ]
         ]
-      tell
-        [ recordDeclaration
-        , Declaration fromJSONInst Nothing
+      tell $
+        [ recordDeclaration ]
+        ++ map (flip Declaration Nothing) userInstances ++
+        [ Declaration fromJSONInst Nothing
         , Declaration toJSONInst Nothing
         ]
       return ((typ, [| parseJSON |], [| toJSON |]), False)

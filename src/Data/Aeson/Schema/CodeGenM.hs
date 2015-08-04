@@ -91,6 +91,18 @@ data Options = Options
   -- aren't checked for validity.
   --
   -- @'_ghcOptsPragmas' = [ "-fno-warn-name-shadowing" ]@
+ , _extraInstances :: Name -> [DecQ]
+  -- ^ Supplied a 'Name' of the type in question (after mangling),
+  -- potentially generate an instance for the type. For example, to
+  -- generate an empty 'Enum' instance for every data type we make,
+  -- the user can supply something like
+  --
+  -- @
+  -- _extraInstances = \n -> return $
+  --   instanceD (cxt []) (conT ''Enum `appT` conT n) []
+  -- @
+  --
+  -- and to generate no instances, simply use @'const' []@.
  }
 
 defaultOptions :: Options
@@ -118,6 +130,7 @@ defaultOptions = Options
        ]
   , _languageExtensions = []
   , _ghcOptsPragmas = []
+  , _extraInstances = const []
   }
 
 askOpts :: CodeGenM s Options
