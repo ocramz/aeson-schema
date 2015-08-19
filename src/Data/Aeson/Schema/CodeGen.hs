@@ -15,7 +15,7 @@ import           Control.Applicative         (Applicative (..), (<$>), (<*>),
                                               (<|>))
 import           Control.Arrow               (first, second)
 import           Control.Monad               (forM_, unless, when, zipWithM)
-import           Control.Monad.RWS.Lazy      (MonadReader (..), 
+import           Control.Monad.RWS.Lazy      (MonadReader (..),
                                               MonadWriter (..), evalRWST)
 import           Data.Aeson
 import           Data.Aeson.Types            (parse)
@@ -51,51 +51,48 @@ type SchemaTypes = M.Map Text Name
 instance (Lift k, Lift v) => Lift (M.Map k v) where
   lift m = [| M.fromList $(lift $ M.toList m) |]
 
--- | Needed modules that are not found by "getUsedModules".
-extraModules :: [String]
-extraModules =
-  [ "Text.Regex" -- provides RegexMaker instances
-  , "Text.Regex.PCRE.String" -- provides RegexLike instances, Regex type
-  , "Data.Aeson.Types" -- Parser type
-  , "Data.Ratio"
-  ]
-
 -- | Extracts all TH declarations
 getDecs :: Code -> [Dec]
 getDecs code = [ dec | Declaration dec _ <- code ]
 
 -- | Generate data-types and FromJSON instances for all schemas
 generateTH :: Graph Schema Text -- ^ Set of schemas
+           -> Options
            -> Q ([Dec], M.Map Text Name) -- ^ Generated code and mapping from schema identifiers to type names
-generateTH = fmap (first getDecs) . generate
+generateTH g = fmap (first getDecs) . generate g
 
 -- | Generated a self-contained module that parses and validates values of
 -- a set of given schemas.
 generateModule :: Text -- ^ Name of the generated module
                -> Graph Schema Text -- ^ Set of schemas
+               -> Options
                -> Q (Text, M.Map Text Name) -- ^ Module code and mapping from schema identifiers to type names
-generateModule modName = fmap (first $ renderCode . map rewrite) . generate
+generateModule modName g opts = fmap (first $ renderCode . map rewrite) $ generate g opts
   where
     renderCode :: Code -> Text
-    renderCode code = T.intercalate "\n\n" $ [modDec, T.intercalate "\n" imprts] ++ map renderDeclaration code
+    renderCode code = T.intercalate "\n\n" $ [langExts <> ghcOpts, modDec, T.intercalate "\n" imprts] ++ map renderDeclaration code
       where
-        mods = sort $ extraModules ++ getUsedModules (getDecs code)
+        mods = sort $ _extraModules opts ++ getUsedModules (getDecs code)
         imprts = map (\m -> "import " <> pack m) mods
         modDec = "module " <> modName <> " where"
+        -- TH has no support for file-header pragmas so we splice the text in here
+        mkHeaderPragmas t = T.intercalate "\n" . map (\s -> T.unwords ["{-#", t, s, "#-}"])
+        langExts = mkHeaderPragmas "LANGUAGE" $ _languageExtensions opts
+        ghcOpts = mkHeaderPragmas "OPTIONS_GHC" $ _ghcOptsPragmas opts
     rewrite :: Declaration -> Declaration
-    rewrite (Declaration dec text) = Declaration (replaceHiddenModules $ cleanPatterns dec) text
+    rewrite (Declaration dec text) = Declaration (replaceHiddenModules (cleanPatterns dec) (_replaceModules opts)) text
     rewrite a = a
 
 -- | Generate a generalized representation of the code in a Haskell module
-generate :: Graph Schema Text -> Q (Code, M.Map Text Name)
-generate graph = swap <$> evalRWST (unCodeGenM $ generateTopLevel graph >> return typeMap) typeMap used
+generate :: Graph Schema Text -> Options -> Q (Code, M.Map Text Name)
+generate graph opts = swap <$> evalRWST (unCodeGenM $ generateTopLevel graph >> return typeMap) (opts, typeMap) used
   where
     (used, typeMap) = second M.fromList $ mapAccumL nameAccum HS.empty (M.keys graph)
     nameAccum usedNames schemaName = second (schemaName,) $ swap $ codeGenNewName (firstUpper $ unpack schemaName) usedNames
 
 generateTopLevel :: Graph Schema Text -> CodeGenM SchemaTypes ()
 generateTopLevel graph = do
-  typeMap <- ask
+  (opts, typeMap) <- ask
   graphN <- qNewName "graph"
   when (nameBase graphN /= "graph") $ fail "name graph is already taken"
   graphDecType <- runQ $ sigD graphN [t| Graph Schema Text |]
@@ -106,7 +103,7 @@ generateTopLevel graph = do
     ((typeQ, fromJsonQ, toJsonQ), defNewtype) <- generateSchema (Just typeName) name schema
     when defNewtype $ do
       let newtypeCon = normalC typeName [strictType notStrict typeQ]
-      newtypeDec <- runQ $ newtypeD (cxt []) typeName [] newtypeCon derivingTypeclasses
+      newtypeDec <- runQ $ newtypeD (cxt []) typeName [] newtypeCon (_derivingTypeclasses opts)
       fromJSONInst <- runQ $ instanceD (cxt []) (conT ''FromJSON `appT` conT typeName)
         [ valD (varP $ mkName "parseJSON") (normalB [| fmap $(conE typeName) . $fromJsonQ |]) []
         ]
@@ -126,7 +123,7 @@ generateSchema :: Maybe Name -- ^ Name to be used by type declarations
                -> Schema Text
                -> CodeGenM SchemaTypes ((TypeQ, ExpQ, ExpQ), Bool) -- ^ ((type of the generated representation (a), function :: Value -> Parser a), whether a newtype wrapper is necessary)
 generateSchema decName name schema = case schemaDRef schema of
-  Just ref -> ask >>= \typesMap -> case M.lookup ref typesMap of
+  Just ref -> askEnv >>= \typesMap -> case M.lookup ref typesMap of
     Nothing -> fail "couldn't find referenced schema"
     Just referencedSchema -> return ((conT referencedSchema, [| parseJSON |], [| toJSON |]), True)
   Nothing -> first (\(typ,from,to) -> (typ,wrap from,to)) <$> case schemaType schema of
@@ -198,14 +195,11 @@ generateSchema decName name schema = case schemaDRef schema of
       then parser
       else lamE [varP val] $ doE $ checkers ++ [noBindS $ parser `appE` varE val]
 
-derivingTypeclasses :: [Name]
-derivingTypeclasses = [''Eq, ''Show]
-
 assertStmt :: ExpQ -> String -> StmtQ
 assertStmt expr err = noBindS [| unless $(expr) (fail err) |]
 
 assertValidates :: ExpQ -> ExpQ -> StmtQ
-assertValidates schema value = noBindS
+assertValidates schema value = noBindS $ parensE
   [| case validate $(varE $ mkName "graph") $schema $value of
        [] -> return ()
        es -> fail $ unlines es
@@ -357,11 +351,14 @@ generateObject decName name schema = case (propertiesList, schemaAdditionalPrope
                  , Nothing
                  )
       conName <- maybe (qNewName $ firstUpper $ unpack name) return decName
+      tcs <- _derivingTypeclasses <$> askOpts
+      rMods <- _replaceModules <$> askOpts
+      userInstanceGen <- _extraInstances <$> askOpts
       recordDeclaration <- runQ $ genRecord conName
                                             (zip3 propertyNames
-                                                  (map (fmap replaceHiddenModules) propertyTypes)
+                                                  (map (fmap (`replaceHiddenModules` rMods)) propertyTypes)
                                                   (map (schemaDescription . snd) propertiesList))
-                                            derivingTypeclasses
+                                            (map (`replaceHiddenModules` rMods) tcs)
       let typ = conT conName
       let parser = foldl (\oparser propertyParser -> [| $oparser <*> $propertyParser |]) [| pure $(conE conName) |] propertyParsers
       fromJSONInst <- runQ $ instanceD (cxt []) (conT ''FromJSON `appT` typ)
@@ -371,14 +368,17 @@ generateObject decName name schema = case (propertiesList, schemaAdditionalPrope
             ]
         ]
       let paramNames = map (mkName . ("a" ++) . show) $ take (length propertyTos) ([1..] :: [Int])
+
+      userInstances <- runQ . sequence $ userInstanceGen conName
       toJSONInst <- runQ $ instanceD (cxt []) (conT ''ToJSON `appT` typ)
         [ funD (mkName "toJSON") -- cannot use a qualified name here
           [ clause [conP conName $ map varP paramNames] (normalB [| Object $ HM.fromList $ catMaybes $(listE $ zipWith3 (\fieldName to param -> [| (,) $(lift fieldName) <$> $to $(varE param) |]) (map fst propertiesList) propertyTos paramNames) |]) []
           ]
         ]
-      tell
-        [ recordDeclaration
-        , Declaration fromJSONInst Nothing
+      tell $
+        [ recordDeclaration ]
+        ++ map (flip Declaration Nothing) userInstances ++
+        [ Declaration fromJSONInst Nothing
         , Declaration toJSONInst Nothing
         ]
       return ((typ, [| parseJSON |], [| toJSON |]), False)
@@ -393,11 +393,14 @@ generateObject decName name schema = case (propertiesList, schemaAdditionalPrope
     checkAdditionalProperties _ (Choice1of2 True) = [| return () |]
     checkAdditionalProperties _ (Choice1of2 False) = [| fail "additional properties are not allowed" |]
     checkAdditionalProperties value (Choice2of2 sch) = doE [assertValidates (lift sch) value]
+    -- TODO Once https://ghc.haskell.org/trac/ghc/ticket/10734 is
+    -- fixed, use a ‘let’ again for matchingPatterns and
+    -- isAdditionalProperty
     checkPatternAndAdditionalProperties patterns additional = noBindS
       [| let items = HM.toList $(varE obj) in forM_ items $ \(pname, value) -> do
-           let matchingPatterns = filter (flip PCRE.match (unpack pname) . patternCompiled . fst) $(lift patterns)
+           matchingPatterns <- return (filter (flip PCRE.match (unpack pname) . patternCompiled . fst) $(lift patterns))
            forM_ matchingPatterns $ \(_, sch) -> $(doE [assertValidates [| sch |] [| value |]])
-           let isAdditionalProperty = null matchingPatterns && pname `notElem` $(lift $ map fst $ HM.toList $ schemaProperties schema)
+           isAdditionalProperty <- return (null matchingPatterns && pname `notElem` $(lift $ map fst $ HM.toList $ schemaProperties schema))
            when isAdditionalProperty $(checkAdditionalProperties [| value |] additional)
       |]
     additionalPropertiesAllowed (Choice1of2 True) = True

@@ -1,6 +1,7 @@
 {-# LANGUAGE DeriveDataTypeable         #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE TupleSections #-}
+{-# LANGUAGE TemplateHaskell #-}
 
 module Data.Aeson.Schema.CodeGenM
   ( Declaration (..)
@@ -9,6 +10,11 @@ module Data.Aeson.Schema.CodeGenM
   , renderDeclaration
   , codeGenNewName
   , genRecord
+  -- * Customising the codegen
+  , Options(..)
+  , defaultOptions
+  , askOpts
+  , askEnv
   ) where
 
 import           Control.Applicative        (Applicative (..), (<$>))
@@ -19,6 +25,7 @@ import qualified Control.Monad.Trans.Class  as MT
 import           Data.Data                  (Data, Typeable)
 import           Data.Function              (on)
 import qualified Data.HashSet               as HS
+import qualified Data.Map                   as M
 import           Data.Monoid                ((<>), mconcat)
 import           Data.Text                  (Text, pack)
 import qualified Data.Text                  as T
@@ -60,8 +67,78 @@ codeGenNewName s used = (Name (mkOccName free) NameS, HS.insert free used)
 -- has a readonly map from schema identifiers to the names of the corresponding
 -- types in the generated code.
 newtype CodeGenM s a = CodeGenM
-  { unCodeGenM :: RWST s Code StringSet Q a
-  } deriving (Monad, Applicative, Functor, MonadReader s, MonadWriter Code, MonadState StringSet)
+  { unCodeGenM :: RWST (Options, s) Code StringSet Q a
+  } deriving (Monad, Applicative, Functor, MonadReader (Options, s), MonadWriter Code, MonadState StringSet)
+
+-- | Extra options used for the codegen
+data Options = Options
+ { _extraModules :: [String]
+  -- ^ Needed modules that are not found by 'getUsedModules'.
+ , _derivingTypeclasses :: [Name]
+  -- ^ Classes to put in the @deriving@ clause
+ , _replaceModules :: M.Map String String
+  -- ^ A 'M.Map' of modules which we should replace with other ones
+  -- when references to them are found. Useful for example when the
+  -- codegen is hitting a hidden module that's not already gotten rid
+  -- of in 'Data.Aeson.Schema.Helpers.replaceHiddenModules'.
+ , _languageExtensions :: [Text]
+  -- ^ List of @LANGUAGE@ extensions to enable in the module. Note that
+  -- these aren't checked for validity.
+  --
+  -- @'_languageExtensions' = [ "LambdaCase" ]@
+ , _ghcOptsPragmas :: [Text]
+  -- ^ List of @OPTIONS_GHC@ to turn on in the module. Note that these
+  -- aren't checked for validity.
+  --
+  -- @'_ghcOptsPragmas' = [ "-fno-warn-name-shadowing" ]@
+ , _extraInstances :: Name -> [DecQ]
+  -- ^ Supplied a 'Name' of the type in question (after mangling),
+  -- potentially generate an instance for the type. For example, to
+  -- generate an empty 'Enum' instance for every data type we make,
+  -- the user can supply something like
+  --
+  -- @
+  -- _extraInstances = \n -> return $
+  --   instanceD (cxt []) (conT ''Enum `appT` conT n) []
+  -- @
+  --
+  -- and to generate no instances, simply use @'const' []@.
+ }
+
+defaultOptions :: Options
+defaultOptions = Options
+  { _extraModules = [ "Text.Regex" -- provides RegexMaker instances
+                    , "Text.Regex.PCRE.String" -- provides RegexLike instances, Regex type
+                    , "Data.Aeson.Types" -- Parser type
+                    , "Data.Ratio"
+                    ]
+  , _derivingTypeclasses = [''Eq, ''Show]
+  , _replaceModules = M.fromList
+       [ ("Data.HashMap.Base", "Data.HashMap.Lazy")
+       , ("Data.Aeson.Types.Class", "Data.Aeson")
+       , ("Data.Aeson.Types.Internal", "Data.Aeson.Types")
+         -- "Could not find module `GHC.Integer.Type'; it is a hidden
+         -- module in the package `integer-gmp'"
+       , ("GHC.Integer.Type", "Prelude")
+       , ("GHC.Types", "Prelude")
+       , ("GHC.Real", "Prelude")
+       , ("Data.Text.Internal", "Data.Text")
+       , ("Data.Map.Base", "Data.Map")
+         -- Due to mistake in base 4.8.{0,1} releases
+       , ("Data.OldList", "Prelude")
+       , ("Data.Typeable.Internal", "Data.Typeable")
+       , ("Data.Binary.Class", "Data.Binary")
+       ]
+  , _languageExtensions = []
+  , _ghcOptsPragmas = []
+  , _extraInstances = const []
+  }
+
+askOpts :: CodeGenM s Options
+askOpts = fst <$> ask
+
+askEnv :: CodeGenM s s
+askEnv = snd <$> ask
 
 instance Quasi (CodeGenM s) where
   qNewName = state . codeGenNewName

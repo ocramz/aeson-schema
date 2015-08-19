@@ -1,3 +1,8 @@
+# 0.4.0.0
+
+- Add Data.Aeson.Schema.CodeGenM.Options type which allows
+  customisation of codegen output
+
 # 0.3.0.7 - 2015-07-15
 
 - Bump upper bounds: Allow vector-0.11
