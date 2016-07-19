@@ -31,11 +31,3 @@ instance Lift S.Scientific where
     let c = S.coefficient s
         e = S.base10Exponent s
     in [| S.scientific c e |]
-
-instance Lift Value where
-  lift (Object o) = [| Object o |]
-  lift (Array a)  = [| Array a |]
-  lift (String t) = [| String t |]
-  lift (Number n) = [| Number n |]
-  lift (Bool b)   = [| Bool b |]
-  lift Null       = [| Null |]
