@@ -1,7 +1,8 @@
+{-# LANGUAGE CPP                        #-}
 {-# LANGUAGE DeriveDataTypeable         #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE TupleSections #-}
-{-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE TemplateHaskell            #-}
+{-# LANGUAGE TupleSections              #-}
 
 module Data.Aeson.Schema.CodeGenM
   ( Declaration (..)
@@ -18,6 +19,7 @@ module Data.Aeson.Schema.CodeGenM
   ) where
 
 import           Control.Applicative        (Applicative (..), (<$>))
+import           Control.Monad.Fail         (MonadFail)
 import           Control.Monad.IO.Class     (MonadIO (..))
 import           Control.Monad.RWS.Lazy     (MonadReader (..), MonadState (..),
                                              MonadWriter (..), RWST (..))
@@ -68,7 +70,8 @@ codeGenNewName s used = (Name (mkOccName free) NameS, HS.insert free used)
 -- types in the generated code.
 newtype CodeGenM s a = CodeGenM
   { unCodeGenM :: RWST (Options, s) Code StringSet Q a
-  } deriving (Monad, Applicative, Functor, MonadReader (Options, s), MonadWriter Code, MonadState StringSet)
+  } deriving (Monad, MonadFail, Applicative, Functor, MonadReader (Options, s), MonadWriter Code, MonadState StringSet)
+
 
 -- | Extra options used for the codegen
 data Options = Options
@@ -156,6 +159,19 @@ instance Quasi (CodeGenM s) where
   qLocation = CodeGenM . MT.lift $ location
   qRunIO = CodeGenM . MT.lift . runIO
   qAddDependentFile = CodeGenM . MT.lift . addDependentFile
+#if MIN_VERSION_template_haskell(2,11,0)
+  qReifyFixity = undefined
+  qReifyRoles = undefined
+  qReifyAnnotations = undefined
+  qReifyModule = undefined
+  qReifyConStrictness = undefined
+  qAddTopDecls = undefined
+  qAddModFinalizer = undefined
+  qGetQ = undefined
+  qPutQ = undefined
+  qIsExtEnabled = undefined
+  qExtsEnabled = undefined
+#endif
 
 instance MonadIO (CodeGenM s) where
   liftIO = qRunIO
@@ -189,5 +205,11 @@ genRecord name fields classes = Declaration <$> dataDec
     indent = ("  " <>)
 
     -- Template Haskell
+#if MIN_VERSION_template_haskell(2,11,0)
+    constructor = recC name $ map (\(fieldName, fieldType, _) -> (fieldName,Bang NoSourceUnpackedness NoSourceStrictness,) <$> fieldType) fields
+    dataDec = dataD (cxt []) name [] Nothing [constructor] (cxt (map conT classes))
+#else
     constructor = recC name $ map (\(fieldName, fieldType, _) -> (fieldName,NotStrict,) <$> fieldType) fields
     dataDec = dataD (cxt []) name [] [constructor] classes
+#endif
+

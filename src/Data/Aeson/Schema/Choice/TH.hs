@@ -1,3 +1,4 @@
+{-# LANGUAGE CPP             #-}
 {-# LANGUAGE TemplateHaskell #-}
 
 module Data.Aeson.Schema.Choice.TH
@@ -17,10 +18,16 @@ generateChoice n = do
   let tyParamNames = map (mkName . singleton) $ take n ['a'..]
   let tyParams = map varT tyParamNames
   conNames <- mapM (newName . \i -> "Choice" ++ show i ++ "of" ++ show n) [1..n]
+#if MIN_VERSION_template_haskell(2,11,0)
+  let cons = zipWith normalC conNames $ map ((:[]) . bangType (bang noSourceUnpackedness noSourceStrictness)) tyParams
+  dataDec <- dataD (cxt []) tyName (map PlainTV tyParamNames) Nothing cons (cxt (map conT [''Eq, ''Ord, ''Show, ''Read]))
+  let genClassConstraints c = cxt $ map (appT (conT c)) tyParams
+#else
   let cons = zipWith normalC conNames $ map ((:[]) . strictType notStrict) tyParams
-  dataDec <- dataD (cxt []) tyName (map PlainTV tyParamNames) cons [''Eq, ''Ord, ''Show, ''Read]
-  let tyCon = appConT tyName tyParams
+  dataDec <- dataD (cxt []) tyName (map PlainTV tyParamNames) cons ([''Eq, ''Ord, ''Show, ''Read])
   let genClassConstraints c = cxt $ map (classP c . singleton) tyParams
+#endif
+  let tyCon = appConT tyName tyParams
   instToJSON <- instanceD (genClassConstraints ''ToJSON)
                           (conT ''ToJSON `appT` tyCon)
                           [ funD 'toJSON $ zipWith genToJSONClause conNames tyParamNames ]

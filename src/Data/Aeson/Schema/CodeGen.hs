@@ -1,4 +1,5 @@
 {-# OPTIONS_GHC -fno-warn-orphans #-}
+{-# LANGUAGE CPP                        #-}
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE TemplateHaskell            #-}
 {-# LANGUAGE TupleSections              #-}
@@ -102,8 +103,14 @@ generateTopLevel graph = do
     let typeName = typeMap M.! name
     ((typeQ, fromJsonQ, toJsonQ), defNewtype) <- generateSchema (Just typeName) name schema
     when defNewtype $ do
+#if MIN_VERSION_template_haskell(2,11,0)
+      let newtypeCon = normalC typeName [bangType (bang noSourceUnpackedness noSourceStrictness) typeQ]
+      newtypeDec <- runQ $ newtypeD (cxt []) typeName [] Nothing newtypeCon (cxt (map conT (_derivingTypeclasses opts)))
+#else
       let newtypeCon = normalC typeName [strictType notStrict typeQ]
       newtypeDec <- runQ $ newtypeD (cxt []) typeName [] newtypeCon (_derivingTypeclasses opts)
+#endif
+
       fromJSONInst <- runQ $ instanceD (cxt []) (conT ''FromJSON `appT` conT typeName)
         [ valD (varP $ mkName "parseJSON") (normalB [| fmap $(conE typeName) . $fromJsonQ |]) []
         ]
