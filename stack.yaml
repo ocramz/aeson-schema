@@ -2,4 +2,7 @@ flags: {}
 packages:
 - '.'
 extra-deps: []
-resolver: lts-3.13
+resolver: lts-7.5
+
+nix:
+  packages: [pcre, libiconv]

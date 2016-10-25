@@ -18,6 +18,7 @@ module Data.Aeson.Schema.CodeGenM
   ) where
 
 import           Control.Applicative        (Applicative (..), (<$>))
+import           Control.Monad.Fail         (MonadFail)
 import           Control.Monad.IO.Class     (MonadIO (..))
 import           Control.Monad.RWS.Lazy     (MonadReader (..), MonadState (..),
                                              MonadWriter (..), RWST (..))
@@ -68,7 +69,7 @@ codeGenNewName s used = (Name (mkOccName free) NameS, HS.insert free used)
 -- types in the generated code.
 newtype CodeGenM s a = CodeGenM
   { unCodeGenM :: RWST (Options, s) Code StringSet Q a
-  } deriving (Monad, Applicative, Functor, MonadReader (Options, s), MonadWriter Code, MonadState StringSet)
+  } deriving (Monad, Applicative, Functor, MonadReader (Options, s), MonadWriter Code, MonadState StringSet, MonadFail)
 
 -- | Extra options used for the codegen
 data Options = Options
@@ -189,5 +190,5 @@ genRecord name fields classes = Declaration <$> dataDec
     indent = ("  " <>)
 
     -- Template Haskell
-    constructor = recC name $ map (\(fieldName, fieldType, _) -> (fieldName,NotStrict,) <$> fieldType) fields
-    dataDec = dataD (cxt []) name [] [constructor] classes
+    constructor = recC name $ map (\(fieldName, fieldType, _) -> (fieldName,Bang NoSourceUnpackedness NoSourceStrictness,) <$> fieldType) fields
+    dataDec = dataD (cxt []) name [] Nothing [constructor] $ mapM conT classes
