@@ -17,8 +17,8 @@ generateChoice n = do
   let tyParamNames = map (mkName . singleton) $ take n ['a'..]
   let tyParams = map varT tyParamNames
   conNames <- mapM (newName . \i -> "Choice" ++ show i ++ "of" ++ show n) [1..n]
-  let cons = zipWith normalC conNames $ map ((:[]) . strictType notStrict) tyParams
-  dataDec <- dataD (cxt []) tyName (map PlainTV tyParamNames) cons [''Eq, ''Ord, ''Show, ''Read]
+  let cons = zipWith normalC conNames $ map ((:[]) . bangType (pure $ Bang NoSourceUnpackedness NoSourceStrictness)) tyParams
+  dataDec <- dataD (cxt []) tyName (map PlainTV tyParamNames) Nothing cons $ mapM conT [''Eq, ''Ord, ''Show, ''Read]
   let tyCon = appConT tyName tyParams
   let genClassConstraints c = cxt $ map (classP c . singleton) tyParams
   instToJSON <- instanceD (genClassConstraints ''ToJSON)

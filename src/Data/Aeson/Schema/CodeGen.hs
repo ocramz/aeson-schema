@@ -102,8 +102,8 @@ generateTopLevel graph = do
     let typeName = typeMap M.! name
     ((typeQ, fromJsonQ, toJsonQ), defNewtype) <- generateSchema (Just typeName) name schema
     when defNewtype $ do
-      let newtypeCon = normalC typeName [strictType notStrict typeQ]
-      newtypeDec <- runQ $ newtypeD (cxt []) typeName [] newtypeCon (_derivingTypeclasses opts)
+      let newtypeCon = normalC typeName [bangType (pure $ Bang NoSourceUnpackedness NoSourceStrictness) typeQ]
+      newtypeDec <- runQ $ newtypeD (cxt []) typeName [] Nothing newtypeCon (mapM conT $ _derivingTypeclasses opts)
       fromJSONInst <- runQ $ instanceD (cxt []) (conT ''FromJSON `appT` conT typeName)
         [ valD (varP $ mkName "parseJSON") (normalB [| fmap $(conE typeName) . $fromJsonQ |]) []
         ]
