@@ -1,10 +1,11 @@
 {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE CPP #-}
 
 module Data.Aeson.Schema.Choice.TH
   ( generateChoice
   ) where
 
-import           Control.Applicative (Alternative (..), (<$>))
+import           Control.Applicative (Alternative (..))
 import           Control.Monad       (forM)
 import           Data.Aeson          (FromJSON (..), ToJSON (..))
 import           Language.Haskell.TH
@@ -14,13 +15,20 @@ generateChoice :: Int -> Q [Dec]
 generateChoice n | n < 2 = return []
 generateChoice n = do
   tyName <- newName $ "Choice" ++ show n
-  let tyParamNames = map (mkName . singleton) $ take n ['a'..]
+  let tyParamNames = map (mkName . return) $ take n ['a'..]
   let tyParams = map varT tyParamNames
   conNames <- mapM (newName . \i -> "Choice" ++ show i ++ "of" ++ show n) [1..n]
+
+#if ! MIN_VERSION_template_haskell(2,11,0)
   let cons = zipWith normalC conNames $ map ((:[]) . strictType notStrict) tyParams
   dataDec <- dataD (cxt []) tyName (map PlainTV tyParamNames) cons [''Eq, ''Ord, ''Show, ''Read]
+#else
+  let cons = zipWith normalC conNames $ map ((:[]) . bangType (pure $ Bang NoSourceUnpackedness NoSourceStrictness)) tyParams
+  dataDec <- dataD (cxt []) tyName (map PlainTV tyParamNames) Nothing cons $ mapM conT [''Eq, ''Ord, ''Show, ''Read]
+#endif
+
   let tyCon = appConT tyName tyParams
-  let genClassConstraints c = cxt $ map (classP c . singleton) tyParams
+  let genClassConstraints c = cxt $ map (\tp -> conT c `appT` tp) tyParams
   instToJSON <- instanceD (genClassConstraints ''ToJSON)
                           (conT ''ToJSON `appT` tyCon)
                           [ funD 'toJSON $ zipWith genToJSONClause conNames tyParamNames ]
@@ -82,8 +90,6 @@ generateChoice n = do
     return [typeDec, funDef]
   return $ [dataDec, instToJSON, instFromJSON, instArbitrary, choiceFunDec, choiceFun, mapChoiceFunDec, mapChoiceFun] ++ choiceIofNFuns
   where
-    singleton :: a -> [a]
-    singleton = (:[])
     genToJSONClause :: Name -> Name -> ClauseQ
     genToJSONClause con param = clause [conP con [varP param]] (normalB . appE (varE 'toJSON) . varE $ param) []
     mkNames :: Char -> [Name]

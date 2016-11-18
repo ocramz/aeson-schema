@@ -1,8 +1,6 @@
-import           Control.Applicative               ((<$>))
 import           Test.Framework
 import qualified Data.Text                         as T
 
-import qualified Data.Aeson.Schema.Choice.Tests
 import qualified Data.Aeson.Schema.CodeGen.Tests
 import qualified Data.Aeson.Schema.Types.Tests
 import qualified Data.Aeson.Schema.Validator.Tests
@@ -28,11 +26,11 @@ main = do
 runTest :: String -> IO ()
 runTest tc = do
     at <- allTests
-    let schemaTests = findTest at 
-    if length schemaTests == 0 
-        then fail "test not found" 
+    let schemaTests = findTest at
+    if length schemaTests == 0
+        then fail "test not found"
         else
-            defaultMain 
+            defaultMain
               [
                 testGroup "Data.Aeson.Schema.Validator" $ Data.Aeson.Schema.Validator.Tests.tests schemaTests
                 , buildTest $ testGroup "Data.Aeson.Schema.CodeGen" <$> Data.Aeson.Schema.CodeGen.Tests.tests schemaTests

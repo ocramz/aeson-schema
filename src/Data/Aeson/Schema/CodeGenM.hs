@@ -2,6 +2,7 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE TupleSections #-}
 {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE CPP #-}
 
 module Data.Aeson.Schema.CodeGenM
   ( Declaration (..)
@@ -17,7 +18,7 @@ module Data.Aeson.Schema.CodeGenM
   , askEnv
   ) where
 
-import           Control.Applicative        (Applicative (..), (<$>))
+import qualified Control.Monad.Fail as      Fail
 import           Control.Monad.IO.Class     (MonadIO (..))
 import           Control.Monad.RWS.Lazy     (MonadReader (..), MonadState (..),
                                              MonadWriter (..), RWST (..))
@@ -26,7 +27,7 @@ import           Data.Data                  (Data, Typeable)
 import           Data.Function              (on)
 import qualified Data.HashSet               as HS
 import qualified Data.Map                   as M
-import           Data.Monoid                ((<>), mconcat)
+import           Data.Monoid                ((<>))
 import           Data.Text                  (Text, pack)
 import qualified Data.Text                  as T
 import           Language.Haskell.TH
@@ -68,7 +69,12 @@ codeGenNewName s used = (Name (mkOccName free) NameS, HS.insert free used)
 -- types in the generated code.
 newtype CodeGenM s a = CodeGenM
   { unCodeGenM :: RWST (Options, s) Code StringSet Q a
-  } deriving (Monad, Applicative, Functor, MonadReader (Options, s), MonadWriter Code, MonadState StringSet)
+  } deriving ( Monad, Applicative, Functor, MonadReader (Options, s)
+             , MonadWriter Code, MonadState StringSet)
+
+instance Fail.MonadFail (CodeGenM s) where
+  fail = CodeGenM . fail
+
 
 -- | Extra options used for the codegen
 data Options = Options
@@ -152,10 +158,23 @@ instance Quasi (CodeGenM s) where
     return a
   qLookupName b = CodeGenM . MT.lift . (if b then lookupTypeName else lookupValueName)
   qReify = CodeGenM . MT.lift . reify
-  qReifyInstances name = CodeGenM . MT.lift . reifyInstances name
   qLocation = CodeGenM . MT.lift $ location
   qRunIO = CodeGenM . MT.lift . runIO
   qAddDependentFile = CodeGenM . MT.lift . addDependentFile
+  qReifyInstances name = CodeGenM . MT.lift . reifyInstances name
+  qReifyRoles = CodeGenM . MT.lift . reifyRoles
+  qReifyAnnotations = CodeGenM . MT.lift . reifyAnnotations
+  qReifyModule = CodeGenM . MT.lift . reifyModule
+  qAddTopDecls = CodeGenM . MT.lift . addTopDecls
+  qAddModFinalizer = CodeGenM . MT.lift . addModFinalizer
+  qGetQ = CodeGenM $ MT.lift getQ
+  qPutQ = CodeGenM . MT.lift . putQ
+#if MIN_VERSION_template_haskell(2,11,0)
+  qReifyFixity = CodeGenM . MT.lift . reifyFixity
+  qReifyConStrictness = CodeGenM . MT.lift . reifyConStrictness
+  qIsExtEnabled = CodeGenM . MT.lift . isExtEnabled
+  qExtsEnabled = CodeGenM $ MT.lift extsEnabled
+#endif
 
 instance MonadIO (CodeGenM s) where
   liftIO = qRunIO
@@ -189,5 +208,10 @@ genRecord name fields classes = Declaration <$> dataDec
     indent = ("  " <>)
 
     -- Template Haskell
+#if ! MIN_VERSION_template_haskell(2,11,0)
     constructor = recC name $ map (\(fieldName, fieldType, _) -> (fieldName,NotStrict,) <$> fieldType) fields
     dataDec = dataD (cxt []) name [] [constructor] classes
+#else
+    constructor = recC name $ map (\(fieldName, fieldType, _) -> (fieldName,Bang NoSourceUnpackedness NoSourceStrictness,) <$> fieldType) fields
+    dataDec = dataD (cxt []) name [] Nothing [constructor] $ mapM conT classes
+#endif

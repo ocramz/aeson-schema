@@ -2,6 +2,7 @@
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE TemplateHaskell            #-}
 {-# LANGUAGE TupleSections              #-}
+{-# LANGUAGE CPP                        #-}
 
 module Data.Aeson.Schema.CodeGen
   ( Declaration (..)
@@ -11,8 +12,7 @@ module Data.Aeson.Schema.CodeGen
   , generateModule
   ) where
 
-import           Control.Applicative         (Applicative (..), (<$>), (<*>),
-                                              (<|>))
+import           Control.Applicative         ((<|>))
 import           Control.Arrow               (first, second)
 import           Control.Monad               (forM_, unless, when, zipWithM)
 import           Control.Monad.RWS.Lazy      (MonadReader (..),
@@ -31,7 +31,7 @@ import           Data.Scientific             (Scientific, floatingOrInteger,
                                               isInteger)
 import           Data.Text                   (Text, pack, unpack)
 import qualified Data.Text                   as T
-import           Data.Traversable            (forM, traverse)
+import           Data.Traversable            (forM)
 import           Data.Tuple                  (swap)
 import qualified Data.Vector                 as V
 import           Language.Haskell.TH
@@ -102,8 +102,15 @@ generateTopLevel graph = do
     let typeName = typeMap M.! name
     ((typeQ, fromJsonQ, toJsonQ), defNewtype) <- generateSchema (Just typeName) name schema
     when defNewtype $ do
+
+#if MIN_VERSION_template_haskell(2,11,0)
+      let newtypeCon = normalC typeName [bangType (pure $ Bang NoSourceUnpackedness NoSourceStrictness) typeQ]
+      newtypeDec <- runQ $ newtypeD (cxt []) typeName [] Nothing newtypeCon (mapM conT $ _derivingTypeclasses opts)
+#else
       let newtypeCon = normalC typeName [strictType notStrict typeQ]
       newtypeDec <- runQ $ newtypeD (cxt []) typeName [] newtypeCon (_derivingTypeclasses opts)
+#endif
+
       fromJSONInst <- runQ $ instanceD (cxt []) (conT ''FromJSON `appT` conT typeName)
         [ valD (varP $ mkName "parseJSON") (normalB [| fmap $(conE typeName) . $fromJsonQ |]) []
         ]

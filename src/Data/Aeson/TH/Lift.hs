@@ -4,12 +4,10 @@
 
 module Data.Aeson.TH.Lift () where
 
-import           Data.Aeson                 (Value (..))
 import qualified Data.HashMap.Lazy          as HM
 import qualified Data.Scientific            as S
 import           Data.Text                  (Text, pack, unpack)
 import qualified Data.Vector                as V
-import           Language.Haskell.TH
 import           Language.Haskell.TH.Syntax (Lift (..))
 
 instance Lift Text where

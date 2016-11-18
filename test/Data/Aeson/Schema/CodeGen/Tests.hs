@@ -1,12 +1,6 @@
+{-# LANGUAGE QuasiQuotes          #-}
+{-# LANGUAGE TupleSections        #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
-{-# LANGUAGE ExistentialQuantification #-}
-{-# LANGUAGE FlexibleInstances         #-}
-{-# LANGUAGE ImpredicativeTypes        #-}
-{-# LANGUAGE QuasiQuotes               #-}
-{-# LANGUAGE RankNTypes                #-}
-{-# LANGUAGE ScopedTypeVariables       #-}
-{-# LANGUAGE TupleSections             #-}
-
 module Data.Aeson.Schema.CodeGen.Tests
   ( tests
   ) where
@@ -16,10 +10,8 @@ import           Test.Framework.Providers.HUnit
 import           Test.Framework.Providers.QuickCheck2
 import qualified Test.HUnit                           as HU
 import           Test.QuickCheck                      hiding (Result (..))
-import           Test.QuickCheck.Property             (Result (..), failed,
-                                                       ioProperty, succeeded)
+import           Test.QuickCheck.Property (Result (..), failed, succeeded)
 
-import           Control.Applicative                  (pure, (<$>), (<*>))
 import           Control.Concurrent                   (forkIO)
 import           Control.Concurrent.Chan              (Chan, newChan, readChan,
                                                        writeChan)
@@ -100,9 +92,9 @@ instance Arbitrary Value where
   arbitrary = arbitraryValue 3
 
 instance Arbitrary SchemaType where
-  arbitrary = elements [minBound..maxBound]
+  arbitrary = elements [minBound .. maxBound]
 
-arbitrarySchema :: (Eq a) => Int -> Gen (Schema a)
+arbitrarySchema :: Eq a => Int -> Gen (Schema a)
 arbitrarySchema 0 = return empty
 arbitrarySchema depth = do
   typ <- shortListOf1 (choice2of arbitrary subSchema)

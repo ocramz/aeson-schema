@@ -13,7 +13,6 @@ module Data.Aeson.Schema.Types
   , schemaQQ
   ) where
 
-import           Control.Applicative        ((<*>), (*>), (<*))
 import           Control.Arrow              (second)
 import           Control.Monad              (liftM)
 import           Data.Aeson                 (FromJSON (..), Value (..), (.!=),
@@ -27,14 +26,12 @@ import           Data.Attoparsec.Lazy       (Result (..), parse)
 import           Data.ByteString.Lazy.Char8 (pack)
 import           Data.Foldable              (Foldable (..), toList)
 import           Data.Function              (on)
-import           Data.Functor               ((<$>))
 import           Data.HashMap.Strict        (HashMap)
 import qualified Data.HashMap.Strict        as H
 import qualified Data.Map                   as M
 import           Data.Maybe                 (catMaybes)
 import           Data.Scientific            (Scientific)
 import           Data.Text                  (Text, unpack)
-import           Data.Traversable           (traverse)
 import qualified Data.Vector                as V
 import           Language.Haskell.TH.Quote  (QuasiQuoter (..))
 import           Language.Haskell.TH        (varE, recUpdE)
@@ -67,12 +64,12 @@ mkPattern t = liftM (Pattern t) $ makeRegexM (unpack t)
 -- | Primitive JSON types
 data SchemaType = StringType
                 | NumberType
-                | IntegerType
+                | IntegerType
                 | BooleanType
-                | ObjectType
+                | ObjectType
                 | ArrayType
-                | NullType
-                | AnyType -- ^ any of the above
+                | NullType
+                | AnyType -- ^ any of the above
                 deriving (Eq, Ord, Enum, Bounded, Show, Read)
 
 instance FromJSON SchemaType where
