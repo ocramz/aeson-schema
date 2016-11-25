@@ -7,7 +7,7 @@ aeson-schema is an implementation of the [JSON Schema specification](http://json
 
 You can install this library using cabal:
 
-    cabal update && cabal install aeson-schema
+    cabal update && cabal install aeson-schema 
 
 ## Running the tests
 
