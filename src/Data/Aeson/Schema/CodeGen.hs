@@ -17,7 +17,7 @@ import           Control.Arrow               (first, second)
 import           Control.Monad               (forM_, unless, when, zipWithM)
 import           Control.Monad.RWS.Lazy      (MonadReader (..),
                                               MonadWriter (..), evalRWST)
-import           Data.Aeson
+import           Data.Aeson hiding (Options)
 import           Data.Aeson.Types            (parse)
 import           Data.Char                   (isAlphaNum, isLetter, toLower,
                                               toUpper)
@@ -102,8 +102,10 @@ generateTopLevel graph = do
     let typeName = typeMap M.! name
     ((typeQ, fromJsonQ, toJsonQ), defNewtype) <- generateSchema (Just typeName) name schema
     when defNewtype $ do
-
-#if MIN_VERSION_template_haskell(2,11,0)
+#if MIN_VERSION_template_haskell(2,12,0)
+      let newtypeCon = normalC typeName [bangType (pure $ Bang NoSourceUnpackedness NoSourceStrictness) typeQ]
+      newtypeDec <- runQ $ newtypeD (cxt []) typeName [] Nothing newtypeCon [derivClause Nothing . fmap conT $ _derivingTypeclasses opts]
+#elif MIN_VERSION_template_haskell(2,11,0)
       let newtypeCon = normalC typeName [bangType (pure $ Bang NoSourceUnpackedness NoSourceStrictness) typeQ]
       newtypeDec <- runQ $ newtypeD (cxt []) typeName [] Nothing newtypeCon (mapM conT $ _derivingTypeclasses opts)
 #else
