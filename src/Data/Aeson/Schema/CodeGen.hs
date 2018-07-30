@@ -479,7 +479,7 @@ generateArray name schema = case schemaItems schema of
       )
 
     arr = mkName "arr"
-    code parser = lambdaPattern (conP ''Array [varP arr])
+    code parser = lambdaPattern (conP 'Array [varP arr])
                                 (doE $ checkers ++ parser)
                                 [| fail "not an array" |]
     checkMinItems m = assertStmt [| V.length $(varE arr) >= m |] $ "array must have at least " ++ show m ++ " items"
