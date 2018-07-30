@@ -6,7 +6,7 @@ module Data.Aeson.Schema.CodeGen.Tests
   ) where
 
 import           Test.Framework
-import           Test.Framework.Providers.HUnit
+import qualified Test.Framework.Providers.HUnit as HU
 import           Test.Framework.Providers.QuickCheck2
 import qualified Test.HUnit                           as HU
 import           Test.QuickCheck                      hiding (Result (..))
@@ -244,7 +244,7 @@ tests schemaTests = do
     [ testProperty "generated code typechecks" $ typecheckGenerate forkLift
     , testGroup "examples" $ testExamples forkLift
     , testGroup "JSON-Schema-Test-Suite" $ map (execSchemaTest forkLift) schemaTests
-    , testCase "1-tuple" $ do
+    , HU.testCase "1-tuple" $ do
         let
           schema = empty
             { schemaType = [Choice1of2 ArrayType]
@@ -256,7 +256,7 @@ tests schemaTests = do
         case result of
           Left err -> HU.assertFailure $ show err
           Right _  -> return ()
-    , testCase "simple map" $ do
+    , HU.testCase "simple map" $ do
         let
           schema = [schemaQQ| {
               "type": "object",
@@ -299,7 +299,7 @@ typecheck code forkLift = withCodeTempFile code $ \path ->
   carry forkLift $ Hint.loadModules [path]
 
 testExamples :: ForkLift -> [Test]
-testExamples forkLift = examples testCase (assertValid forkLift) (assertInvalid forkLift)
+testExamples forkLift = examples HU.testCase (assertValid forkLift) (assertInvalid forkLift)
 
 execSchemaTest :: ForkLift -> SchemaTest -> Test
 execSchemaTest forkLift schemaTest = testGroup testName testCases
@@ -307,7 +307,7 @@ execSchemaTest forkLift schemaTest = testGroup testName testCases
     testName = unpack $ schemaTestDescription schemaTest
     testCases = map execSchemaTestCase $ schemaTestCases schemaTest
     schema = schemaTestSchema schemaTest
-    execSchemaTestCase schemaTestCase = testCase name assertion
+    execSchemaTestCase schemaTestCase = HU.testCase name assertion
       where
         name = unpack $ schemaTestCaseDescription schemaTestCase
         shouldBeValid = schemaTestCaseValid schemaTestCase

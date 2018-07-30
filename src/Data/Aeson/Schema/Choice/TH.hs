@@ -22,6 +22,9 @@ generateChoice n = do
 #if ! MIN_VERSION_template_haskell(2,11,0)
   let cons = zipWith normalC conNames $ map ((:[]) . strictType notStrict) tyParams
   dataDec <- dataD (cxt []) tyName (map PlainTV tyParamNames) cons [''Eq, ''Ord, ''Show, ''Read]
+#elif MIN_VERSION_template_haskell(2,12,0)
+  let cons = zipWith normalC conNames $ map ((:[]) . bangType (pure $ Bang NoSourceUnpackedness NoSourceStrictness)) tyParams
+  dataDec <- dataD (cxt []) tyName (map PlainTV tyParamNames) Nothing cons $ [derivClause Nothing (fmap conT [''Eq, ''Ord, ''Show, ''Read])]
 #else
   let cons = zipWith normalC conNames $ map ((:[]) . bangType (pure $ Bang NoSourceUnpackedness NoSourceStrictness)) tyParams
   dataDec <- dataD (cxt []) tyName (map PlainTV tyParamNames) Nothing cons $ mapM conT [''Eq, ''Ord, ''Show, ''Read]
