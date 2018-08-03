@@ -1,7 +1,7 @@
 flags: {}
 packages:
 - '.'
-resolver: lts-9.21
+resolver: lts-11.19
 
 nix:
   packages: [pcre, libiconv]
