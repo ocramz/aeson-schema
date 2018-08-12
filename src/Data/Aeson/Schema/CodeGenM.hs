@@ -207,11 +207,14 @@ genRecord name fields classes = Declaration <$> dataDec
     indent :: Text -> Text
     indent = ("  " <>)
 
-    -- Template Haskell
-#if ! MIN_VERSION_template_haskell(2,11,0)
-    constructor = recC name $ map (\(fieldName, fieldType, _) -> (fieldName,NotStrict,) <$> fieldType) fields
-    dataDec = dataD (cxt []) name [] [constructor] classes
-#else
+#if MIN_VERSION_template_haskell(2,12,0)
+    constructor = recC name $ map (\(fieldName, fieldType, _) -> (fieldName,Bang NoSourceUnpackedness NoSourceStrictness,) <$> fieldType) fields
+    deriv = derivClause Nothing $ map conT classes
+    dataDec = dataD (cxt []) name [] Nothing [constructor] $ [deriv]
+#elif MIN_VERSION_template_haskell(2,11,0)
     constructor = recC name $ map (\(fieldName, fieldType, _) -> (fieldName,Bang NoSourceUnpackedness NoSourceStrictness,) <$> fieldType) fields
     dataDec = dataD (cxt []) name [] Nothing [constructor] $ mapM conT classes
+#else
+    constructor = recC name $ map (\(fieldName, fieldType, _) -> (fieldName,NotStrict,) <$> fieldType) fields
+    dataDec = dataD (cxt []) name [] [constructor] classes
 #endif

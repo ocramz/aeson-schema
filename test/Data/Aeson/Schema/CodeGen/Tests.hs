@@ -10,7 +10,7 @@ import           Test.Framework.Providers.HUnit
 import           Test.Framework.Providers.QuickCheck2
 import qualified Test.HUnit                           as HU
 import           Test.QuickCheck                      hiding (Result (..))
-import           Test.QuickCheck.Property (Result (..), failed, succeeded)
+import           Test.QuickCheck.Property (Result (reason), failed, succeeded)
 
 import           Control.Concurrent                   (forkIO)
 import           Control.Concurrent.Chan              (Chan, newChan, readChan,
