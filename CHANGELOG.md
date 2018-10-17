@@ -1,3 +1,6 @@
+# 0.4.1.2
+- Bump upper bounds on aeson and newest TH
+
 # 0.4.0.0
 
 - Add Data.Aeson.Schema.CodeGenM.Options type which allows
