@@ -1,3 +1,6 @@
+# 0.4.1.3
+- Bump upper bounds on aeson again, more TH fixing
+
 # 0.4.1.2
 - Bump upper bounds on aeson and newest TH
 
