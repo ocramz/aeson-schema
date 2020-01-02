@@ -1,7 +1,9 @@
 flags: {}
 packages:
 - '.'
-resolver: lts-11.19
+# resolver: lts-11.19 
+# resolver: lts-14.19 # GHC 8.6.5
+resolver: nightly-2019-12-30 # 8.8.1
 
 nix:
   packages: [pcre, libiconv]

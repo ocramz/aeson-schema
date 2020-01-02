@@ -2,6 +2,7 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE TemplateHaskell   #-}
 {-# LANGUAGE TupleSections     #-}
+{-# LANGUAGE CPP #-}
 
 module Data.Aeson.Schema.Types
   ( Pattern (..)
@@ -58,7 +59,11 @@ instance Lift Pattern where
   lift (Pattern src _) = [| let Right p = mkPattern src in p |]
 
 -- | Compile a regex to a pattern, reporting errors with fail
+#if ! MIN_VERSION_regex_pcre(0,95,0)
 mkPattern :: (Monad m) => Text -> m Pattern
+#else
+mkPattern :: (MonadFail m) => Text -> m Pattern
+#endif
 mkPattern t = liftM (Pattern t) $ makeRegexM (unpack t)
 
 -- | Primitive JSON types
