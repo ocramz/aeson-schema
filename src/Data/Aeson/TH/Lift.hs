@@ -6,12 +6,8 @@ module Data.Aeson.TH.Lift () where
 
 import qualified Data.HashMap.Lazy          as HM
 import qualified Data.Scientific            as S
-import           Data.Text                  (Text, pack, unpack)
 import qualified Data.Vector                as V
 import           Language.Haskell.TH.Syntax (Lift (..))
-
-instance Lift Text where
-  lift txt = [| pack $(lift (unpack txt)) |]
 
 #if ! MIN_VERSION_template_haskell(2,10,0)
 instance Lift Double where
