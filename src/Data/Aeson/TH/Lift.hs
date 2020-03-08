@@ -7,9 +7,9 @@ module Data.Aeson.TH.Lift () where
 
 import qualified Data.HashMap.Lazy          as HM
 import qualified Data.Scientific            as S
-import           Data.Text                  (Text, pack, unpack)
 import qualified Data.Vector                as V
 import           Language.Haskell.TH.Syntax (Lift (..))
+
 
 #if ! MIN_VERSION_text(1,2,4)
 instance Lift Text where
