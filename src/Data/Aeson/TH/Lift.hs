@@ -1,6 +1,7 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE CPP #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
+{-# OPTIONS_GHC -fno-warn-unused-imports #-}
 
 module Data.Aeson.TH.Lift () where
 
@@ -8,6 +9,12 @@ import qualified Data.HashMap.Lazy          as HM
 import qualified Data.Scientific            as S
 import qualified Data.Vector                as V
 import           Language.Haskell.TH.Syntax (Lift (..))
+
+
+#if ! MIN_VERSION_text(1,2,4)
+instance Lift Text where
+  lift txt = [| pack $(lift (unpack txt)) |]
+#endif
 
 #if ! MIN_VERSION_template_haskell(2,10,0)
 instance Lift Double where
