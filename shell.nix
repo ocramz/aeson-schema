@@ -13,7 +13,7 @@ let
       }:
       mkDerivation {
         pname = "aeson-schema";
-        version = "0.4.1.2";
+        version = "0.4.2.0";
         src = ./.;
         enableSeparateDataOutput = true;
         libraryHaskellDepends = [

@@ -1,5 +1,7 @@
-# 0.4.1.3
+# 0.4.2.0
 - Bump upper bounds on aeson again, more TH fixing
+- Bump QuickCheck version bound
+- Remove orphan Lift instance for Text
 
 # 0.4.1.2
 - Bump upper bounds on aeson and newest TH
