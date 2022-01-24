@@ -38,8 +38,8 @@ import           Language.Haskell.TH.Quote  (QuasiQuoter (..))
 import           Language.Haskell.TH        (varE, recUpdE)
 import           Language.Haskell.TH.Syntax (Lift (..))
 import           Prelude                    hiding (foldr, length)
-import           Text.Regex.PCRE            (makeRegexM)
-import           Text.Regex.PCRE.String     (Regex)
+import           Text.Regex.Base            (makeRegexM)
+import           Text.Regex.TDFA.String     (Regex)
 import           Data.Aeson.TH.Lift         ()
 
 -- | Compiled regex and its source
@@ -59,7 +59,7 @@ instance Lift Pattern where
   lift (Pattern src _) = [| let Right p = mkPattern src in p |]
 
 -- | Compile a regex to a pattern, reporting errors with fail
-#if ! MIN_VERSION_regex_pcre(0,95,0)
+#if ! MIN_VERSION_regex_tdfa(0,95,0)
 mkPattern :: (Monad m) => Text -> m Pattern
 #else
 mkPattern :: (MonadFail m) => Text -> m Pattern

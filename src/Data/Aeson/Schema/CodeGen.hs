@@ -36,8 +36,8 @@ import           Data.Tuple                  (swap)
 import qualified Data.Vector                 as V
 import           Language.Haskell.TH
 import           Language.Haskell.TH.Syntax
-import qualified Text.Regex.PCRE             as PCRE
-import           Text.Regex.PCRE.String      (Regex)
+import qualified Text.Regex.Base             as RE
+import           Text.Regex.TDFA.String      (Regex)
 
 import           Data.Aeson.Schema.Choice
 import           Data.Aeson.Schema.CodeGenM
@@ -230,8 +230,8 @@ generateString schema = return (conT ''Text, code, [| String |])
     checkMinLength l = assertStmt [| T.length $(varE str) >= l |] $ "string must have at least " ++ show l ++ " characters"
     checkMaxLength l = assertStmt [| T.length $(varE str) <= l |] $ "string must have at most " ++ show l ++ " characters"
     checkPattern (Pattern p _) = noBindS $ doE
-      [ bindS (varP $ mkName "regex") [| PCRE.makeRegexM $(lift (T.unpack p)) |]
-      , assertStmt [| PCRE.match ($(varE $ mkName "regex") :: Regex) (unpack $(varE str)) |] $ "string must match pattern " ++ show p
+      [ bindS (varP $ mkName "regex") [| RE.makeRegexM $(lift (T.unpack p)) |]
+      , assertStmt [| RE.match ($(varE $ mkName "regex") :: Regex) (unpack $(varE str)) |] $ "string must match pattern " ++ show p
       ]
     checkFormat format = noBindS [| maybe (return ()) fail (validateFormat $(lift format) $(varE str)) |]
     checkers = catMaybes
@@ -409,7 +409,7 @@ generateObject decName name schema = case (propertiesList, schemaAdditionalPrope
     -- isAdditionalProperty
     checkPatternAndAdditionalProperties patterns additional = noBindS
       [| let items = HM.toList $(varE obj) in forM_ items $ \(pname, value) -> do
-           matchingPatterns <- return (filter (flip PCRE.match (unpack pname) . patternCompiled . fst) $(lift patterns))
+           matchingPatterns <- return (filter (flip RE.match (unpack pname) . patternCompiled . fst) $(lift patterns))
            forM_ matchingPatterns $ \(_, sch) -> $(doE [assertValidates [| sch |] [| value |]])
            isAdditionalProperty <- return (null matchingPatterns && pname `notElem` $(lift $ map fst $ HM.toList $ schemaProperties schema))
            when isAdditionalProperty $(checkAdditionalProperties [| value |] additional)

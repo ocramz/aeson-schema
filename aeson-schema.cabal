@@ -45,7 +45,7 @@ library
                        mtl >= 2 && < 3,
                        regex-compat,
                        regex-base,
-                       regex-pcre >= 0.94.4 && < 0.96,
+                       regex-tdfa >= 0.94.4,
                        scientific >= 0.3.3.7 && < 0.4,
                        syb >= 0.4.4 && < 0.8,
                        text >= 1.2 && < 1.3,
