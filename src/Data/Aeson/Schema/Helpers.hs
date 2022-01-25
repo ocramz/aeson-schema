@@ -18,8 +18,8 @@ import           Data.Text              (Text, unpack)
 import qualified Data.Vector            as V
 import           Language.Haskell.TH    (Name, Pat (..), mkName, nameBase,
                                          nameModule)
-import           Text.Regex.PCRE        (makeRegexM)
-import           Text.Regex.PCRE.String (Regex)
+import           Text.Regex.Base        (makeRegexM)
+import           Text.Regex.TDFA.String (Regex)
 
 -- | Tests whether all items in a vector are different from each other.
 vectorUnique :: (Eq a) => V.Vector a -> Bool

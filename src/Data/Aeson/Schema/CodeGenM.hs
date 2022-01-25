@@ -114,7 +114,7 @@ data Options = Options
 defaultOptions :: Options
 defaultOptions = Options
   { _extraModules = [ "Text.Regex" -- provides RegexMaker instances
-                    , "Text.Regex.PCRE.String" -- provides RegexLike instances, Regex type
+                    , "Text.Regex.TDFA.String" -- provides RegexLike instances, Regex type
                     , "Data.Aeson.Types" -- Parser type
                     , "Data.Ratio"
                     ]
