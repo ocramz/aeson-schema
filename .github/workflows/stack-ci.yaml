@@ -20,6 +20,12 @@ jobs:
             stack-yaml: stack.yaml
             extra-args: ""
           - os: ubuntu-latest
+            stack-yaml: stack-lts-7.yaml
+            extra-args: ""
+          - os: ubuntu-latest
+            stack-yaml: stack-lts-11.yaml
+            extra-args: ""
+          - os: ubuntu-latest
             stack-yaml: stack-lts-17.yaml
             extra-args: ""
           - os: ubuntu-latest
@@ -28,15 +34,15 @@ jobs:
           - os: ubuntu-latest
             stack-yaml: stack-nightly.yaml
             extra-args: ""
-          - os: macos-latest
-            stack-yaml: stack-lts-17.yaml
-            extra-args: ""
-          - os: macos-latest
-            stack-yaml: stack-lts-18.yaml
-            extra-args: ""
-          - os: macos-latest
-            stack-yaml: stack-nightly.yaml
-            extra-args: ""
+          # - os: macos-latest
+          #   stack-yaml: stack-lts-17.yaml
+          #   extra-args: ""
+          # - os: macos-latest
+          #   stack-yaml: stack-lts-18.yaml
+          #   extra-args: ""
+          # - os: macos-latest
+          #   stack-yaml: stack-nightly.yaml
+          #   extra-args: ""
     steps:
       - name: Clone project
         uses: actions/checkout@v2
