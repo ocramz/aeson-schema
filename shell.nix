@@ -6,10 +6,10 @@ let
 
   f = { mkDerivation, aeson, attoparsec, base, bytestring
       , containers, directory, fail, filepath, ghc-prim, hashable, hint
-      , HUnit, mtl, QuickCheck, regex-base, regex-compat, regex-pcre
-      , scientific, stdenv, syb, template-haskell, temporary
-      , test-framework, test-framework-hunit, test-framework-quickcheck2
-      , text, th-lift, transformers, unordered-containers, vector
+      , HUnit, lib, mtl, QuickCheck, regex-base, regex-compat, regex-tdfa
+      , scientific, syb, template-haskell, temporary, test-framework
+      , test-framework-hunit, test-framework-quickcheck2, text, th-lift
+      , transformers, unordered-containers, vector
       }:
       mkDerivation {
         pname = "aeson-schema";
@@ -18,7 +18,7 @@ let
         enableSeparateDataOutput = true;
         libraryHaskellDepends = [
           aeson attoparsec base bytestring containers fail ghc-prim mtl
-          QuickCheck regex-base regex-compat regex-pcre scientific syb
+          QuickCheck regex-base regex-compat regex-tdfa scientific syb
           template-haskell text th-lift transformers unordered-containers
           vector
         ];
@@ -28,9 +28,9 @@ let
           template-haskell temporary test-framework test-framework-hunit
           test-framework-quickcheck2 text unordered-containers vector
         ];
-        homepage = "https://github.com/Fuuzetsu/aeson-schema";
+        homepage = "https://github.com/ocramz/aeson-schema";
         description = "Haskell JSON schema validator and parser generator";
-        license = stdenv.lib.licenses.mit;
+        license = lib.licenses.mit;
       };
 
   haskellPackages = if compiler == "default"
