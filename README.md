@@ -1,4 +1,4 @@
-# aeson-schema [![Stack-CI](https://github.com/Fuuzetsu/aeson-schema/actions/workflows/stack-ci.yaml/badge.svg?branch=master)](https://github.com/Fuuzetsu/aeson-schema/actions/workflows/stack-ci.yaml) [![Hackage version](https://img.shields.io/hackage/v/aeson-schema.svg?style=flat)](http://hackage.haskell.org/package/aeson-schema) [![Hackage dependencies](https://img.shields.io/hackage-deps/v/aeson-schema.svg?style=flat)](http://packdeps.haskellers.com/feed?needle=aeson-schema)
+# aeson-schema [![Stack-CI](https://github.com/ocramz/aeson-schema/actions/workflows/stack-ci.yaml/badge.svg?branch=master)](https://github.com/ocramz/aeson-schema/actions/workflows/stack-ci.yaml) [![Hackage version](https://img.shields.io/hackage/v/aeson-schema.svg?style=flat)](http://hackage.haskell.org/package/aeson-schema) [![Hackage dependencies](https://img.shields.io/hackage-deps/v/aeson-schema.svg?style=flat)](http://packdeps.haskellers.com/feed?needle=aeson-schema)
 
 aeson-schema is an implementation of the [JSON Schema specification](http://json-schema.org). It can be used in two ways:
 
