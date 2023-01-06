@@ -27,8 +27,10 @@ instance (Lift k, Lift v) => Lift (HM.HashMap k v) where
 instance (Lift a) => Lift (V.Vector a) where
   lift vec = [| V.fromList $(lift (V.toList vec)) |]
 
+#if ! MIN_VERSION_aeson(1,5,6)
 instance Lift S.Scientific where
   lift s =
     let c = S.coefficient s
         e = S.base10Exponent s
     in [| S.scientific c e |]
+#endif
